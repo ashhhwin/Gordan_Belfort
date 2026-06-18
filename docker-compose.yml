@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  ai-backend:
+    build:
+      context: ./ai
+      dockerfile: Dockerfile
+    container_name: gordan-belfort-ai
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ai:/app
+      - ./database/data/raw:/app/data/raw
+    environment:
+      - POSTGRES_HOST=host.docker.internal
+      - POSTGRES_USER=${PGUSER:-ashwinram}
+      - POSTGRES_DB=${PGDATABASE:-stock_pilot}
+      - POSTGRES_PASSWORD=${PGPASSWORD:-}
+      - POSTGRES_PORT=${PGPORT:-5432}
+      # Ollama runs on host, docker needs to connect to host.docker.internal
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

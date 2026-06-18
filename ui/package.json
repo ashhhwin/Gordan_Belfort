@@ -1,0 +1,51 @@
+{
+  "name": "dashboard",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"node ../database/api/server.js\" \"cd ../ai && .venv/bin/uvicorn api.main:app --port 8000 --reload\"",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "dev:app": "concurrently -k \"vite --port 5173\" \"wait-on tcp:5173 && electron .\" \"cd ../ai && .venv/bin/uvicorn api.main:app --port 8000 --reload\"",
+    "build:app": "vite build && electron-builder"
+  },
+  "dependencies": {
+    "axios": "^1.18.0",
+    "chart.js": "^4.5.1",
+    "date-fns": "^4.4.0",
+    "lightweight-charts": "^5.2.0",
+    "lucide-react": "^1.18.0",
+    "react": "^19.2.6",
+    "react-chartjs-2": "^5.3.1",
+    "react-dom": "^19.2.6",
+    "react-hot-toast": "^2.6.0",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.17.0",
+    "recharts": "^3.8.1",
+    "remark-gfm": "^4.0.1",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "concurrently": "^10.0.3",
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.3",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "jsdom": "^29.1.1",
+    "vite": "^8.0.12",
+    "vitest": "^4.1.9",
+    "wait-on": "^9.0.10"
+  }
+}

@@ -1,0 +1,7 @@
+https://groww.in/v1/api/stocks_equity/reports/holdings/EXCEL?asOnDate=2026-06-15
+
+https://groww.in/v1/api/portfolio/v3/transaction/report/holdings_report?as_on_date=2026-06-16
+
+
+https://groww.in/v1/api/stocks_portfolio_bo/v1/cdsl_report/download_demat
+

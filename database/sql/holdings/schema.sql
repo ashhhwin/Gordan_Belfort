@@ -1,0 +1,17 @@
+CREATE TABLE IF NOT EXISTS holdings (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  asset_class VARCHAR(50) NOT NULL,
+  symbol VARCHAR(100) NOT NULL,
+  name VARCHAR(200) NOT NULL,
+  sector VARCHAR(100),
+  qty NUMERIC(18,4) NOT NULL,
+  avg_buy NUMERIC(18,4) NOT NULL,
+  cmp NUMERIC(18,4) NOT NULL DEFAULT 0,
+  day_change NUMERIC(18,4) DEFAULT 0,
+  day_change_pct NUMERIC(18,4) DEFAULT 0,
+  buy_date DATE NOT NULL,
+  sparkline JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);

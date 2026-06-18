@@ -1,0 +1,26 @@
+DAILY ALL ETF SNAPSHOT SUMMARY 
+https://www.nseindia.com/api/etf?csv=true&selectValFormat=crores
+
+ALL INDICES SNAPSHOT SUMMARY
+https://www.nseindia.com/api/allIndices?csv=true
+
+PRICE BAND HITTERS
+https://www.nseindia.com/api/live-analysis-price-band-hitter
+
+VOLUME_GAINERS
+https://www.nseindia.com/api/live-analysis-volume-gainers?mode=laVolumeGainer&csv=true
+
+NEW 52W HIGH/LOW
+https://www.nseindia.com/api/live-analysis-data-52weekhighstock
+https://www.nseindia.com/api/live-analysis-data-52weeklowstock
+
+LARGE DEALS
+http://nseindia.com/api/snapshot-capital-market-largedeal?objName=BULK_DEALS_DATA&fileName=BULK&csv=true
+http://nseindia.com/api/snapshot-capital-market-largedeal?objName=BLOCK_DEALS_DATA&fileName=BLOCK&csv=true
+http://nseindia.com/api/snapshot-capital-market-largedeal?objName=SHORT_DEALS_DATA&fileName=SHORT&csv=true
+
+ADVANCES/DECLINES
+https://www.nseindia.com/api/live-analysis-advance
+
+STOCKS TRADED
+https://www.nseindia.com/api/live-analysis-stocksTraded
