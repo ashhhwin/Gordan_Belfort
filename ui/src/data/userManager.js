@@ -89,8 +89,14 @@ export async function runSyncJob() {
   return data;
 }
 
-export async function executeSqlQuery(query) {
-  const { data } = await axios.post(`${API_BASE}/sql-query`, { query });
+export async function getDatabaseMetadata(db) {
+  const params = db ? { db } : {};
+  const { data } = await axios.get(`${API_BASE}/database/meta`, { params });
+  return data;
+}
+
+export async function executeSqlQuery(query, db) {
+  const { data } = await axios.post(`${API_BASE}/sql-query`, { query, db });
   return data;
 }
 

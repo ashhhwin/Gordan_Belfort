@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import toast from 'react-hot-toast';
 import {
-  getUsers, getUserById,
+  getUsers,
   setUserWebAuthnCred, setUserPinHash,
   getHoldingsForUser, getFamilyHoldings,
   getFamily, updateFamilyConfig, addHolding, updateHolding, deleteHolding,
@@ -53,22 +53,42 @@ export const useStore = create((set, get) => ({
   // Initialize app state from Postgres
   async initApp() {
     try {
-      const [users, family, history, syncStatus, syncLogs, cronStatus] = await Promise.all([
-        getUsers(), getFamily(), getPortfolioHistory(), getSyncStatus(), getSyncLogs(), getCronStatus()
+      const [users, family, history, syncStatus, syncLogs, cronStatus, earningsRes, allHoldings] = await Promise.all([
+        getUsers(), getFamily(), getPortfolioHistory(), getSyncStatus(), getSyncLogs(), getCronStatus(),
+        fetch('http://localhost:5005/api/market/earnings').catch(() => ({ ok: false })),
+        getFamilyHoldings().catch(() => [])
       ]);
       const baseCurrency = family?.config?.baseCurrency || 'INR';
-      set({ users, family, currency: baseCurrency, history, syncStatus, syncLogs, cronStatus });
       
-      try {
-        const res = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.rates?.INR) {
-            set({ usdInr: data.rates.INR });
+      let earnings = [];
+      if (earningsRes.ok) {
+        earnings = await earningsRes.json();
+      }
+
+      const totalDayGain = allHoldings.reduce((sum, h) => sum + (h.dayChange || 0), 0);
+
+      set({ users, family, currency: baseCurrency, history, syncStatus, syncLogs, cronStatus, earnings, totalDayGain });
+      
+      const fetchUsdRate = async () => {
+        try {
+          const res = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.rates?.INR) {
+              set({ usdInr: data.rates.INR });
+            }
           }
+        } catch {
+          console.warn("Failed to fetch live USD/INR rate, using fallback.");
         }
-      } catch (rateErr) {
-        console.warn("Failed to fetch live USD/INR rate, using fallback.");
+      };
+
+      await fetchUsdRate();
+      
+      // Start 30-minute polling if not already running
+      if (!get().rateIntervalId) {
+        const id = setInterval(fetchUsdRate, 30 * 60 * 1000);
+        set({ rateIntervalId: id });
       }
 
       const state = get();
@@ -136,9 +156,13 @@ export const useStore = create((set, get) => ({
         get().loadUserHoldings();
         return { success: true };
       } catch (err) {
-        const msg = err.message || 'Touch ID cancelled.';
+        let msg = err.message || 'Touch ID cancelled.';
+        if (msg.toLowerCase().includes('canceled') || msg.toLowerCase().includes('cancelled')) {
+          msg = 'Touch ID cancelled';
+        } else if (msg.toLowerCase().includes('failed')) {
+          msg = 'Fingerprint not recognized';
+        }
         set({ authError: msg });
-        toast.error(msg);
         return { success: false, error: msg };
       }
     }
@@ -207,9 +231,13 @@ export const useStore = create((set, get) => ({
         get().loadUserHoldings();
         return { success: true };
       } catch (err) {
-        const msg = err.message || 'Touch ID cancelled.';
+        let msg = err.message || 'Touch ID cancelled.';
+        if (msg.toLowerCase().includes('canceled') || msg.toLowerCase().includes('cancelled')) {
+          msg = 'Touch ID cancelled';
+        } else if (msg.toLowerCase().includes('failed')) {
+          msg = 'Fingerprint not recognized';
+        }
         set({ authError: msg });
-        toast.error(msg);
         return { success: false, error: msg };
       }
     }

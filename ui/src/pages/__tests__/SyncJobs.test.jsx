@@ -1,7 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import axios from 'axios';
-import { vi } from 'vitest';
+import { vi, describe, beforeEach, it, expect } from 'vitest';
 import SyncJobs from '../SyncJobs';
 
 // Mock the global store to avoid Zustand issues in tests

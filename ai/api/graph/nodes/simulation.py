@@ -1,36 +1,114 @@
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_ollama import ChatOllama
-from langgraph.prebuilt import create_react_agent
-from api.tools.sandbox import python_sandbox
-
-SIMULATION_PROMPT = """
-You are the Simulation Sub-Agent. 
-You possess a secure Python Sandbox tool. 
-Whenever the user asks to run a calculation, forecast, or generate a plot/graph, YOU MUST use the python_sandbox tool.
-Do NOT guess numbers. Write Python code, run it, and read the stdout.
-If plotting is needed, use matplotlib and plt.show() which is intercepted to output Base64.
-CRITICAL: If the python_sandbox tool returns a string like [[IMAGE_BASE64:...]], you MUST include that EXACT literal string in your final response to the user. Do NOT truncate the base64 data and do NOT replace it with a placeholder like "[Insert Image Here]". The UI requires the exact [[IMAGE_BASE64:...]] string to render the plot!
+"""
+Simulation Agent Node.
+The heavy-lifting agent: backtesting, Monte Carlo, Markov chains, ML, deep learning,
+Python sandbox, and visualization tools.
 """
 
+from langgraph.prebuilt import create_react_agent
 from langsmith import traceable
+from api.config import get_llm
+
+# Import all tools
+from api.tools.sandbox import python_sandbox
+from api.tools.quant_tools import (
+    run_backtest,
+    monte_carlo_simulation,
+    markov_chain_analysis,
+    train_price_predictor,
+    correlation_analysis,
+    portfolio_risk_analysis,
+)
+from api.tools.visualization_tools import (
+    generate_mermaid_diagram,
+    generate_candlestick_chart,
+    generate_comparison_chart,
+)
+from api.tools.database_tools import (
+    get_portfolio_holdings,
+    get_net_worth_summary,
+    query_market_data,
+    run_readonly_sql,
+    get_asset_allocation,
+)
+
+SIMULATION_PROMPT = """You are the Simulation & Analysis Agent inside the Gordan Belfort AI system.
+You are a senior quantitative analyst with access to powerful computational tools.
+
+AVAILABLE TOOLS:
+📊 **Quantitative Analysis:**
+- run_backtest: Backtest trading strategies (SMA crossover, RSI, momentum, Bollinger bands)
+- monte_carlo_simulation: Probabilistic price forecasting with fan charts
+- markov_chain_analysis: Market regime detection with transition matrices
+- train_price_predictor: ML-based price prediction (Random Forest, Gradient Boosting, Linear Regression)
+- correlation_analysis: Cross-asset correlation matrices
+- portfolio_risk_analysis: VaR, CVaR, volatility, risk dashboards
+
+📈 **Visualization:**
+- generate_candlestick_chart: Professional candlestick charts with SMAs
+- generate_comparison_chart: Multi-stock comparison (returns or price)
+- generate_mermaid_diagram: Flowcharts, sequence diagrams, state diagrams
+
+🗃️ **Data Access:**
+- get_portfolio_holdings, get_net_worth_summary, query_market_data, run_readonly_sql, get_asset_allocation
+
+🐍 **Python Sandbox:**
+- python_sandbox: Execute arbitrary Python code (numpy, pandas, scipy, sklearn pre-imported)
+
+CRITICAL RULES:
+1. ALWAYS use tools — never guess numbers or fabricate data.
+2. When a tool returns [[IMAGE_BASE64:...]], you MUST include that EXACT string in your response. The UI renders it as a chart. Do NOT truncate or summarize it.
+3. Present results clearly with markdown formatting: headers, tables, bullet points.
+4. For complex requests, break them into steps and use multiple tools.
+5. When generating Mermaid diagrams, return the mermaid code block directly.
+6. Proactively suggest follow-up analyses the user might find valuable.
+
+{memory_context}"""
+
 
 @traceable(name="Simulation Agent Build")
-def build_simulation_agent():
-    # Tools isolated specifically for this agent
-    tools = [python_sandbox]
-    
-    llm = ChatOllama(model="llama3.1:latest", temperature=0.1, base_url="http://localhost:11434")
-    
-    # create_react_agent compiles a sub-graph that automatically loops between LLM and Tool Execution
-    return create_react_agent(llm, tools=tools, prompt=SIMULATION_PROMPT)
+def build_simulation_agent(memory_context: str = ""):
+    tools = [
+        # Quant tools
+        run_backtest,
+        monte_carlo_simulation,
+        markov_chain_analysis,
+        train_price_predictor,
+        correlation_analysis,
+        portfolio_risk_analysis,
+        # Visualization
+        generate_candlestick_chart,
+        generate_comparison_chart,
+        generate_mermaid_diagram,
+        # Database access
+        get_portfolio_holdings,
+        get_net_worth_summary,
+        query_market_data,
+        run_readonly_sql,
+        get_asset_allocation,
+        # Sandbox
+        python_sandbox,
+    ]
+
+    llm = get_llm(temperature=0.1)
+    prompt = SIMULATION_PROMPT.format(memory_context=memory_context)
+    return create_react_agent(llm, tools=tools, prompt=prompt)
+
 
 @traceable(name="Simulation Node")
 async def simulation_node(state, config):
-    agent = build_simulation_agent()
+    # Build memory context
+    memory_context = ""
+    if state.get("memory_context"):
+        memories = state["memory_context"]
+        if memories:
+            memory_context = "\n\nRELEVANT MEMORIES FROM PAST SESSIONS:\n" + "\n".join(
+                f"- [{m['memory_type']}] {m['content']}" for m in memories
+            )
+
+    agent = build_simulation_agent(memory_context)
     result = await agent.ainvoke({"messages": state["messages"]}, config=config)
-    
-    # React agent returns the full updated message list. We just return the new messages.
+
     return {
-        "messages": result["messages"][-1:], # Get the final AI response
-        "next_agent": "supervisor" # Route back to supervisor to check if done
+        "messages": result["messages"][-1:],
+        "next_agent": "FINISH"
     }

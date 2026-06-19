@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Save } from 'lucide-react';
 import { useStore } from '../../store';
 
@@ -17,6 +17,7 @@ export default function HoldingsModal({ isOpen, onClose, editingHolding = null }
 
   useEffect(() => {
     if (editingHolding) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({
         assetClass: editingHolding.assetClass || 'IND_EQUITY',
         symbol: editingHolding.symbol || '',

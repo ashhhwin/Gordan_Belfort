@@ -1,46 +1,61 @@
-import React, { useMemo } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Brush, Area, AreaChart } from 'recharts';
+import { useMemo } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Brush, ReferenceLine } from 'recharts';
 import { useStore } from '../../store';
 
 export default function NetWorthChart({ filters }) {
-  const { history, currency, usdInr, isFamilyMode, activeUser } = useStore();
+  const { history, isFamilyMode, activeUser, users } = useStore();
 
   const chartData = useMemo(() => {
     if (!history || history.length === 0) return [];
 
-    // Filter the raw history rows based on current UI filters
+    // Filter history based on assetClass filters if necessary
     const filteredRows = history.filter(row => {
-      if (!isFamilyMode && row.user_id !== activeUser?.id) return false;
-      if (isFamilyMode && filters.userId !== 'ALL' && row.user_id !== filters.userId) return false;
       if (filters.assetClass !== 'ALL' && row.asset_class !== filters.assetClass) return false;
       return true;
     });
 
-    // Group by Date
+    // Group by Date and User
     const grouped = {};
     filteredRows.forEach(row => {
       const d = new Date(row.date).toISOString().split('T')[0];
-      if (!grouped[d]) {
-        grouped[d] = { date: d, total_value: 0, invested_amount: 0 };
+      if (!grouped[d]) grouped[d] = { date: d };
+      
+      const uid = row.user_id;
+      if (!grouped[d][uid]) {
+        grouped[d][uid] = { total_value: 0, invested_amount: 0 };
       }
-      grouped[d].total_value += parseFloat(row.total_value);
-      grouped[d].invested_amount += parseFloat(row.invested_amount);
+      grouped[d][uid].total_value += parseFloat(row.total_value || 0);
+      grouped[d][uid].invested_amount += parseFloat(row.invested_amount || 0);
     });
 
-    // Convert to array and sort chronologically
-    let data = Object.values(grouped).sort((a, b) => new Date(a.date) - new Date(b.date));
+    const dates = Object.keys(grouped).sort((a, b) => new Date(a) - new Date(b));
+    if (dates.length === 0) return [];
+    
+    const earliestDate = new Date(dates[0]);
 
-    // Convert currency if needed
-    if (currency === 'USD') {
-      data = data.map(d => ({
-        ...d,
-        total_value: d.total_value / usdInr,
-        invested_amount: d.invested_amount / usdInr,
-      }));
-    }
+    // Format data for Recharts
+    const data = dates.map(d => {
+      const entry = { date: d };
+      const currentDate = new Date(d);
+      
+      // Calculate Benchmark (12% annualized)
+      const daysDiff = (currentDate - earliestDate) / (1000 * 60 * 60 * 24);
+      entry.benchmark = (Math.pow(1.12, daysDiff / 365) - 1) * 100;
+
+      // Calculate Return % for each user
+      users.forEach(u => {
+        const userStats = grouped[d][u.id];
+        if (userStats && userStats.invested_amount > 0) {
+          entry[u.id] = ((userStats.total_value / userStats.invested_amount) - 1) * 100;
+        } else {
+          entry[u.id] = 0; // fallback to 0 instead of undefined to ensure rendering
+        }
+      });
+      return entry;
+    });
 
     return data;
-  }, [history, filters, isFamilyMode, activeUser, currency, usdInr]);
+  }, [history, filters, users]);
 
   if (chartData.length === 0) {
     return (
@@ -50,67 +65,110 @@ export default function NetWorthChart({ filters }) {
     );
   }
 
-  const fmtCurrency = (val) => {
-    if (currency === 'USD') return `$${val.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-    return `₹${val.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-  };
-
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', padding: '12px', borderRadius: '8px' }}>
-          <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: 'var(--text-muted)' }}>{label}</p>
-          <p style={{ margin: '0', fontSize: '14px', fontWeight: 600, color: 'var(--accent-blue)' }}>
-            Net Worth: {fmtCurrency(payload[0].value)}
-          </p>
-          {payload[1] && (
-            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-              Invested: {fmtCurrency(payload[1].value)}
-            </p>
+  return (
+    <div className="card" style={{ height: '400px', marginBottom: '20px', paddingBottom: '20px', display: 'flex', flexDirection: 'column' }}>
+      <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="card-title">Cumulative Performance (Return %)</div>
+        <div style={{ fontSize: 12, display: 'flex', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-amber)' }} />
+            <span style={{ color: 'var(--text-muted)' }}>Market (12% CAGR)</span>
+          </div>
+          {isFamilyMode && users.map(u => (
+            <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: u.color }} />
+              <span style={{ color: 'var(--text-muted)' }}>{u.name.split(' ')[0]}</span>
+            </div>
+          ))}
+          {!isFamilyMode && activeUser && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-blue)' }} />
+              <span style={{ color: 'var(--text-muted)' }}>My Portfolio</span>
+            </div>
           )}
         </div>
-      );
-    }
-    return null;
-  };
-
-  return (
-    <div className="card" style={{ height: '400px', marginBottom: '20px', paddingBottom: '40px' }}>
-      <div className="card-header">
-        <div className="card-title">Historical Net Worth</div>
       </div>
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 20, bottom: 0 }}>
-          <defs>
-            <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="var(--accent-blue)" stopOpacity={0.3}/>
-              <stop offset="95%" stopColor="var(--accent-blue)" stopOpacity={0}/>
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-          <XAxis 
-            dataKey="date" 
-            stroke="var(--text-muted)" 
-            fontSize={11} 
-            tickMargin={10} 
-            tickFormatter={(tick) => new Date(tick).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-          />
-          <YAxis 
-            stroke="var(--text-muted)" 
-            fontSize={11} 
-            tickFormatter={(tick) => {
-              if (tick >= 10000000) return `${(tick/10000000).toFixed(1)}Cr`;
-              if (tick >= 100000) return `${(tick/100000).toFixed(1)}L`;
-              if (tick >= 1000) return `${(tick/1000).toFixed(1)}k`;
-              return tick;
-            }}
-          />
-          <Tooltip content={<CustomTooltip />} />
-          <Area type="monotone" dataKey="total_value" stroke="var(--accent-blue)" strokeWidth={2} fillOpacity={1} fill="url(#colorValue)" />
-          <Line type="monotone" dataKey="invested_amount" stroke="var(--text-muted)" strokeWidth={1} strokeDasharray="5 5" dot={false} />
-          <Brush dataKey="date" height={30} stroke="var(--border-light)" fill="var(--surface-2)" tickFormatter={() => ''} />
-        </AreaChart>
-      </ResponsiveContainer>
+      <div style={{ flex: 1, position: 'relative', width: '100%', minHeight: 0 }}>
+        <ResponsiveContainer width="99%" height="100%" minWidth={0} minHeight={0}>
+          <LineChart data={chartData} margin={{ top: 20, right: 20, left: 20, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+            <XAxis 
+              dataKey="date" 
+              stroke="var(--text-muted)" 
+              fontSize={11} 
+              tickMargin={10} 
+              tickFormatter={(tick) => new Date(tick).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+            />
+            <YAxis 
+              stroke="var(--text-muted)" 
+              fontSize={11} 
+              tickFormatter={(tick) => `${tick}%`}
+              domain={['dataMin - 2', 'dataMax + 2']}
+            />
+            <ReferenceLine y={0} stroke="var(--border-light)" />
+            <Tooltip content={<CustomTooltip users={users} />} />
+            
+            {/* Market Benchmark Line */}
+            <Line type="monotone" dataKey="benchmark" stroke="var(--accent-amber)" strokeWidth={2} strokeDasharray="5 5" dot={{r: 2}} activeDot={{r: 4}} />
+            
+            {/* Portfolio Lines */}
+            {isFamilyMode ? (
+              users.map(u => (
+                <Line 
+                  key={u.id} 
+                  type="monotone" 
+                  dataKey={u.id} 
+                  stroke={u.color} 
+                  strokeWidth={2} 
+                  dot={{r: 3}}
+                  activeDot={{r: 5}}
+                  connectNulls
+                />
+              ))
+            ) : (
+              activeUser && (
+                <Line 
+                  type="monotone" 
+                  dataKey={activeUser.id} 
+                  stroke="var(--accent-blue)" 
+                  strokeWidth={3} 
+                  dot={{r: 3}}
+                  activeDot={{r: 5}}
+                  connectNulls
+                />
+              )
+            )}
+
+            <Brush dataKey="date" height={30} stroke="var(--border-light)" fill="var(--surface-2)" tickFormatter={() => ''} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
+const CustomTooltip = ({ active, payload, label, users }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', padding: '12px', borderRadius: '8px', boxShadow: 'var(--shadow-lg)' }}>
+        <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: 'var(--text-muted)' }}>{label}</p>
+        {payload.map((p, i) => {
+          const isBenchmark = p.dataKey === 'benchmark';
+          const user = users.find(u => u.id === p.dataKey);
+          const color = isBenchmark ? 'var(--accent-amber)' : (user ? user.color : 'var(--accent-blue)');
+          const name = isBenchmark ? 'Market Benchmark (12%)' : (user ? user.name : 'Return');
+          
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '4px 0' }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+              <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{name}:</span>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: p.value >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                {p.value > 0 ? '+' : ''}{(p.value || 0).toFixed(2)}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  return null;
+};

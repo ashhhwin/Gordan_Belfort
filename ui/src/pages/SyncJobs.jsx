@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Activity, Clock, CheckCircle, AlertTriangle, FileText, Play, Trash2, X } from 'lucide-react';
 import { runSyncJob, deleteSyncLog } from '../data/userManager';
-import { useStore } from '../store';
 
 const API_BASE = 'http://localhost:5005/api';
 
@@ -38,6 +37,7 @@ export default function SyncJobs() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
     const interval = setInterval(loadData, isSyncing ? 2000 : 30000);
     return () => clearInterval(interval);
@@ -112,8 +112,6 @@ export default function SyncJobs() {
         {/* Dynamic Job Cards */}
         {cronStatus.map((job, idx) => {
           const isSelected = selectedJob === job.job;
-          const jobLogs = logs.filter(l => l.job_name === job.job);
-          const latestRun = jobLogs[0];
           
           return (
             <div 

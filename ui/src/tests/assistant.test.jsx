@@ -5,35 +5,35 @@ import { describe, it, expect, vi } from 'vitest';
 describe('AI Assistant & Local LLM Integration', () => {
 
   it('44. LLM Polling (Ollama): fetchModels correctly polls Ollama API', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       json: () => Promise.resolve({ models: [{ name: 'llama3' }] })
     });
     
-    const res = await global.fetch('http://localhost:11434/api/tags');
+    const res = await globalThis.fetch('http://localhost:11434/api/tags');
     const data = await res.json();
     expect(data.models[0].name).toBe('llama3');
   });
 
   it('45. LLM Polling (LM Studio): fetchModels correctly falls back to LM Studio API', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       json: () => Promise.resolve({ data: [{ id: 'mistral-instruct' }] })
     });
     
-    const res = await global.fetch('http://localhost:1234/v1/models');
+    const res = await globalThis.fetch('http://localhost:1234/v1/models');
     const data = await res.json();
     expect(data.data[0].id).toBe('mistral-instruct');
   });
 
   it('46. LLM Error Handling: Returns empty array when endpoint is unreachable', async () => {
-    global.fetch = vi.fn().mockRejectedValue(new Error('Connection Refused'));
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error('Connection Refused'));
     
     let models = [];
     try {
-      const res = await global.fetch('http://localhost:11434/api/tags');
+      const res = await globalThis.fetch('http://localhost:11434/api/tags');
       const data = await res.json();
       models = data.models;
-    } catch (e) {
-      models = [];
+    } catch {
+      // fallback
     }
     
     expect(models.length).toBe(0);

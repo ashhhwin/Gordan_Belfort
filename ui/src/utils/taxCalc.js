@@ -31,9 +31,9 @@ export function calculateTaxMetrics(holding, config) {
   const daysHeld = differenceInDays(new Date(), parseISO(buyDate));
   
   // Define holding period thresholds
-  let isLongTerm = false;
-  let stcgRate = 0;
-  let ltcgRate = 0;
+  let isLongTerm;
+  let stcgRate;
+  let ltcgRate;
 
   switch (assetClass) {
     case 'IND_EQUITY':

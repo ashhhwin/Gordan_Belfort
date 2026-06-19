@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import pkg from 'pg';
-const { Pool } = pkg;
+const { Pool, Client } = pkg;
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -306,13 +306,191 @@ app.post('/api/nse-sync-run', async (req, res) => {
   isSyncRunning = false;
 });
 
+// ─── Market Data ───
+app.get('/api/market/overview', async (req, res) => {
+  try {
+    const { region = 'USA', search, industry, cap_category } = req.query;
+
+    if (region === 'IND') {
+      const indQuery = `
+        SELECT elem->>'symbol' AS symbol,
+               elem->>'symbol' AS company_name,
+               (elem->>'lastPrice')::numeric AS p_close,
+               (elem->>'previousClose')::numeric AS prev_close,
+               (elem->>'pchange')::numeric AS day_change_pct,
+               (elem->>'totalTradedVolume')::numeric AS volume
+        FROM public.nse_daily_data, jsonb_array_elements(payload->'total'->'data') AS elem
+        WHERE endpoint_name = 'stocks_traded'
+          AND date = (SELECT MAX(date) FROM public.nse_daily_data WHERE endpoint_name = 'stocks_traded')
+      `;
+      const { rows } = await pool.query(indQuery);
+      
+      let results = rows;
+      if (search) {
+        const s = search.toLowerCase();
+        results = results.filter(r => r.symbol.toLowerCase().includes(s));
+      }
+      
+      results.sort((a, b) => b.volume - a.volume);
+      return res.json(results.slice(0, 100));
+    }
+
+    let queryArgs = [];
+    let conditions = ['trade_date = (SELECT MAX(trade_date) FROM market.market_data)'];
+
+    if (search) {
+      queryArgs.push(`%${search.toUpperCase()}%`);
+      conditions.push(`symbol LIKE $${queryArgs.length}`);
+    }
+    if (industry) {
+      queryArgs.push(industry);
+      conditions.push(`industry = $${queryArgs.length}`);
+    }
+    if (cap_category) {
+      if (cap_category === 'Mega') {
+        conditions.push(`market_cap >= 200000`);
+      } else if (cap_category === 'Large') {
+        conditions.push(`market_cap >= 10000 AND market_cap < 200000`);
+      } else if (cap_category === 'Mid') {
+        conditions.push(`market_cap >= 2000 AND market_cap < 10000`);
+      } else if (cap_category === 'Small') {
+        conditions.push(`market_cap >= 300 AND market_cap < 2000`);
+      } else if (cap_category === 'Micro') {
+        conditions.push(`market_cap < 300`);
+      }
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const query = `
+      SELECT * FROM market.market_data 
+      ${whereClause}
+      ORDER BY trade_date DESC, volume DESC NULLS LAST
+      LIMIT 100
+    `;
+    const { rows } = await pool.query(query, queryArgs);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/market/earnings', async (req, res) => {
+  try {
+    const query = `
+      SELECT * FROM market.earnings_calendar 
+      WHERE date >= CURRENT_DATE
+      ORDER BY date ASC
+      LIMIT 100
+    `;
+    const { rows } = await pool.query(query);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/market/estimates/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  try {
+    const revQuery = `
+      SELECT * FROM market.revenue_estimates 
+      WHERE ticker = $1 
+        AND api_run_date = (SELECT MAX(api_run_date) FROM market.revenue_estimates WHERE ticker = $1)
+      ORDER BY period ASC
+    `;
+    const revResult = await pool.query(revQuery, [symbol.toUpperCase()]);
+    
+    const epsQuery = `
+      SELECT * FROM market.eps_estimates 
+      WHERE ticker = $1 
+        AND api_run_date = (SELECT MAX(api_run_date) FROM market.eps_estimates WHERE ticker = $1)
+      ORDER BY period ASC
+    `;
+    const epsResult = await pool.query(epsQuery, [symbol.toUpperCase()]);
+    
+    res.json({
+      revenue: revResult.rows,
+      eps: epsResult.rows
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function executeDynamicQuery(query, params, dbName) {
+  const currentDb = process.env.PGDATABASE || 'stock_pilot';
+  if (!dbName || dbName === currentDb) {
+    return pool.query(query, params);
+  }
+  const client = new Client({
+    user: process.env.PGUSER || process.env.USER,
+    host: process.env.PGHOST || 'localhost',
+    database: dbName,
+    password: process.env.PGPASSWORD || '',
+    port: process.env.PGPORT || 5432,
+  });
+  await client.connect();
+  try {
+    const res = await client.query(query, params);
+    return res;
+  } finally {
+    await client.end();
+  }
+}
+
+app.get('/api/database/meta', async (req, res) => {
+  try {
+    const targetDb = req.query.db || 'stock_pilot';
+    const dbQuery = `SELECT datname FROM pg_database WHERE datistemplate = false;`;
+    const { rows: dbRows } = await pool.query(dbQuery); // Always query main pool for database list
+    
+    const tableQuery = `SELECT table_name FROM information_schema.tables WHERE table_schema IN ('public', 'market');`;
+    const { rows: tableRows } = await executeDynamicQuery(tableQuery, [], targetDb);
+    
+    const colQuery = `
+      SELECT table_name, column_name, data_type, is_nullable, column_default
+      FROM information_schema.columns
+      WHERE table_schema IN ('public', 'market')
+    `;
+    const { rows: colRows } = await executeDynamicQuery(colQuery, [], targetDb);
+    
+    const fkQuery = `
+      SELECT
+          tc.table_name, 
+          kcu.column_name, 
+          ccu.table_name AS foreign_table_name,
+          ccu.column_name AS foreign_column_name 
+      FROM 
+          information_schema.table_constraints AS tc 
+          JOIN information_schema.key_column_usage AS kcu
+            ON tc.constraint_name = kcu.constraint_name
+            AND tc.table_schema = kcu.table_schema
+          JOIN information_schema.constraint_column_usage AS ccu
+            ON ccu.constraint_name = tc.constraint_name
+            AND ccu.table_schema = tc.table_schema
+      WHERE tc.constraint_type = 'FOREIGN KEY';
+    `;
+    const { rows: fkRows } = await executeDynamicQuery(fkQuery, [], targetDb);
+    
+    res.json({
+      databases: dbRows.map(r => r.datname),
+      tables: tableRows.map(r => r.table_name),
+      columns: colRows,
+      foreignKeys: fkRows
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/sql-query', async (req, res) => {
   try {
-    const { query } = req.body;
+    const { query, db } = req.body;
     if (!query || typeof query !== 'string') {
       return res.status(400).json({ error: "Invalid query string." });
     }
-    const result = await pool.query(query);
+    const result = await executeDynamicQuery(query, [], db);
     res.json({
       command: result.command,
       rowCount: result.rowCount,

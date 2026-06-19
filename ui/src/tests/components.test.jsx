@@ -1,14 +1,14 @@
 /**
  * @vitest-environment jsdom
  */
-import React from 'react';
+
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 
 // Simple mock components since we don't need to mount the entire Zustand tree 
 // to test the logic of these 7 UI scenarios.
 
-function MockHoldingsModal({ mode, initialData, onSubmit }) {
+function MockHoldingsModal({ initialData, onSubmit }) {
   const isNonTradable = ['BANK', 'CREDIT_CARD', 'EPF'].includes(initialData?.assetClass);
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSubmit(); }}>

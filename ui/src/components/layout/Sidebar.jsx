@@ -1,4 +1,3 @@
-import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, TrendingUp, Search, Activity,
@@ -26,9 +25,7 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-logo">
-        <div className="sidebar-logo-icon">⚡</div>
-        <span className="sidebar-logo-text">Gordan Belfort</span>
+      <div className="sidebar-logo" style={{ display: 'none' }}>
       </div>
 
       <nav className="sidebar-nav">

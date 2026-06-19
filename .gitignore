@@ -1,4 +1,5 @@
 # Environment Variables and Secrets (CRITICAL)
+secrets/
 .env
 .env.*
 secrets.json

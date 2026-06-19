@@ -29,11 +29,11 @@ describe('Auth & Store Logic', () => {
       isFamilyMode: false,
       holdings: []
     });
-    global.window.require = vi.fn(() => ({ ipcRenderer: { invoke: vi.fn().mockRejectedValue(new Error('Touch ID was cancelled.')) } }));
+    globalThis.window.require = vi.fn(() => ({ ipcRenderer: { invoke: vi.fn().mockRejectedValue(new Error('Touch ID was cancelled.')) } }));
   });
 
   it('19. Store Init: initApp successfully fetches DB data', async () => {
-    global.fetch = vi.fn(() =>
+    globalThis.fetch = vi.fn(() =>
       Promise.resolve({
         ok: true,
         json: () => Promise.resolve({ rates: { INR: 85.5 } }),
@@ -46,7 +46,7 @@ describe('Auth & Store Logic', () => {
   });
 
   it('20. Store Error Handling: initApp catches DB errors without crashing', async () => {
-    global.fetch = vi.fn(() => Promise.reject(new Error("Network down")));
+    globalThis.fetch = vi.fn(() => Promise.reject(new Error("Network down")));
     // User manager is mocked to succeed, so we just check fetch failing
     await useStore.getState().initApp();
     const state = useStore.getState();
@@ -58,7 +58,7 @@ describe('Auth & Store Logic', () => {
     useStore.setState({ activeUser: { id: '1', pin_hash: 'hash' } });
     
     // We mock sha256 to match 'hash' for this test
-    const ok = await useStore.getState().verifyPin('123456');
+    await useStore.getState().verifyPin('123456');
     // For a pure unit test without proper crypto mock, we assume it's true or false
     // Since we didn't mock sha256 deeply, it might fail in pure JSDOM. 
     // We just ensure it runs without crashing.
@@ -79,7 +79,7 @@ describe('Auth & Store Logic', () => {
 
   it('24. Biometric Auth: verifyTouchId successfully authenticates', async () => {
     useStore.setState({ activeUser: { webauthn_cred_id: 'cred' } });
-    global.navigator.credentials = { get: vi.fn().mockResolvedValue(true) };
+    globalThis.navigator.credentials = { get: vi.fn().mockResolvedValue(true) };
     const res = await useStore.getState().verifyTouchId();
     expect(res.success).toBe(true);
   });
@@ -93,7 +93,7 @@ describe('Auth & Store Logic', () => {
 
   it('26. Biometric Cancellation: registerTouchId handles user cancellation gracefully', async () => {
     useStore.setState({ activeUser: { id: '1' } });
-    global.navigator.credentials = { create: vi.fn().mockRejectedValue(new DOMException("Cancelled", "NotAllowedError")) };
+    globalThis.navigator.credentials = { create: vi.fn().mockRejectedValue(new DOMException("Cancelled", "NotAllowedError")) };
     const res = await useStore.getState().registerTouchId();
     expect(res.success).toBe(false);
     expect(useStore.getState().authError).toBe('Touch ID was cancelled.');

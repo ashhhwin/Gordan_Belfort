@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import {
   Wallet, TrendingUp, TrendingDown, Percent,
-  ArrowUpRight, ArrowDownRight, ChevronUp, ChevronDown, Users, RefreshCw, Plus, Edit2, Trash2
+  ArrowUpRight, ArrowDownRight, ChevronUp, ChevronDown, Users, Plus, Edit2, Trash2
 } from 'lucide-react';
 import { Chart, registerables } from 'chart.js';
-import { Line, Doughnut } from 'react-chartjs-2';
+import { Doughnut } from 'react-chartjs-2';
 import { useStore } from '../store';
 import HoldingsModal from '../components/portfolio/HoldingsModal';
 import NetWorthGrid from '../components/portfolio/NetWorthGrid';
@@ -29,32 +29,6 @@ function fmtVal(n, currency, rate) {
   return currency === 'INR' ? fmtINR(n) : fmtUSD(n, rate);
 }
 
-// ─── Sparkline ─────────────────────────────────────────────────────────────────
-function Sparkline({ data, positive }) {
-  const ref = useRef();
-  useEffect(() => {
-    if (!data || data.length === 0) return;
-    const canvas = ref.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const w = canvas.width, h = canvas.height;
-    const min = Math.min(...data), max = Math.max(...data);
-    const range = max - min || 1;
-    const pts = data.map((v,i) => ({
-      x: (i / (data.length-1)) * w,
-      y: h - ((v - min) / range) * h * 0.8 - h*0.1,
-    }));
-    ctx.clearRect(0,0,w,h);
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
-    ctx.strokeStyle = positive ? 'var(--accent-green)' : 'var(--accent-red)';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-  }, [data, positive]);
-
-  return <canvas ref={ref} width={80} height={30} className="sparkline-cell" />;
-}
 
 // ─── KPI Card ──────────────────────────────────────────────────────────────────
 function KPICard({ icon: Icon, label, value, delta, deltaLabel, glowColor, iconBg, breakdown }) {
@@ -274,13 +248,16 @@ const iconBtnStyle = { background: 'none', border: 'none', color: 'var(--text-mu
 
 import NetWorthChart from '../components/portfolio/NetWorthChart';
 import PortfolioFilters from '../components/portfolio/PortfolioFilters';
+import AssetAllocation from '../components/portfolio/AssetAllocation';
+import TopMovers from '../components/portfolio/TopMovers';
+import PortfolioWeights from '../components/portfolio/PortfolioWeights';
 
 // ─── Portfolio Page ────────────────────────────────────────────────────────────
 export default function Portfolio() {
   const { 
     currency, usdInr: rate, activeUser, holdings, 
     isFamilyMode, toggleFamilyMode, users, 
-    family, deleteHolding
+    family, deleteHolding, history
   } = useStore();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -310,146 +287,161 @@ export default function Portfolio() {
   
   // Traditional equity PNL (excluding non-tradables for these metrics)
   const tradableHoldings = filteredHoldings.filter(h => ['IND_EQUITY', 'US_EQUITY', 'MF', 'CRYPTO'].includes(h.assetClass));
+  const otherHoldings    = filteredHoldings.filter(h => !['IND_EQUITY', 'US_EQUITY', 'MF', 'CRYPTO'].includes(h.assetClass) && h.assetClass !== 'CREDIT_CARD');
+  const liabilities      = filteredHoldings.filter(h => h.assetClass === 'CREDIT_CARD');
   const totalInvested = tradableHoldings.reduce((s,h) => s + h.avgBuy * h.qty, 0);
   const totalCurrent  = tradableHoldings.reduce((s,h) => s + h.cmp  * h.qty, 0);
   const totalPnl      = totalCurrent - totalInvested;
   const totalPnlPct   = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
   
-  const dayGain       = tradableHoldings.reduce((s,h) => s + (h.dayChange || 0) * h.qty, 0);
-  const dayGainPct    = totalCurrent - dayGain > 0 ? (dayGain / (totalCurrent - dayGain)) * 100 : 0;
+  // Extract previous date from history to calculate true Day Gain
+  const safeHistory = Array.isArray(history) ? history : [];
+  const uniqueDates = [...new Set(safeHistory.map(h => new Date(h.date).toISOString().split('T')[0]))].sort((a, b) => new Date(b) - new Date(a));
+  const todayStr = new Date().toISOString().split('T')[0];
+  const previousDateStr = uniqueDates.find(d => d < todayStr) || uniqueDates[0];
+
+  let prevTotal = 0;
+  let prevInvested = 0;
+  if (previousDateStr) {
+    const prevHistory = safeHistory.filter(row => {
+      if (!isFamilyMode && row.user_id !== activeUser?.id) return false;
+      if (isFamilyMode && filters.userId !== 'ALL' && row.user_id !== filters.userId) return false;
+      if (filters.assetClass !== 'ALL' && row.asset_class !== filters.assetClass) return false;
+      return row.date.startsWith(previousDateStr);
+    });
+    prevTotal = prevHistory.reduce((s, row) => s + parseFloat(row.total_value || 0), 0);
+    prevInvested = prevHistory.reduce((s, row) => s + parseFloat(row.invested_amount || 0), 0);
+  }
+
+  let dayGain = 0;
+  let dayGainPct = 0;
+  if (previousDateStr && prevTotal > 0) {
+    const capitalAdded = totalInvested - prevInvested;
+    dayGain = totalCurrent - prevTotal - capitalAdded;
+    dayGainPct = (dayGain / prevTotal) * 100;
+  }
   
   const calculateXIRR = () => {
     if (!tradableHoldings || tradableHoldings.length === 0 || totalInvested <= 0) return 0;
-    
-    const today = new Date();
-    let totalDaysHeldWeighted = 0;
-    
-    tradableHoldings.forEach(h => {
-      const investDate = new Date(h.buyDate || Date.now());
-      const daysHeld = Math.max(1, (today - investDate) / (1000 * 60 * 60 * 24));
-      const weight = (h.avgBuy * h.qty) / totalInvested;
-      totalDaysHeldWeighted += daysHeld * weight;
-    });
-
-    const averageDaysHeld = totalDaysHeldWeighted || 365;
-    const totalReturnMultiple = totalCurrent / totalInvested;
-    const annualizedReturn = Math.pow(totalReturnMultiple, 365 / averageDaysHeld) - 1;
-    return annualizedReturn * 100;
+    const assumedHoldingPeriodYears = 1.5; 
+    return (Math.pow(totalCurrent / totalInvested, 1 / assumedHoldingPeriodYears) - 1) * 100;
   };
-
   const xirr = calculateXIRR();
 
-  // Generate Family Breakdown for KPIs if in Family Mode
-  let valueBreakdown = null;
-  if (isFamilyMode && users.length > 0) {
+  // Value Breakdown for Net Worth Hover
+  let valueBreakdown;
+  if (isFamilyMode) {
     valueBreakdown = users.map(u => {
-      const uHoldings = filteredHoldings.filter(h => h.user_id === u.id);
-      const uVal = uHoldings.reduce((s, h) => s + h.cmp * h.qty, 0);
-      return { name: u.name.split(' ')[0], color: u.color, val: fmtVal(uVal, currency, rate) };
+      const uTotal = filteredHoldings.filter(h => h.user_id === u.id).reduce((s,h) => s + (h.cmp || h.avgBuy) * h.qty, 0);
+      return { label: u.name, value: fmtVal(uTotal, currency, rate), color: u.color };
     });
+  } else {
+    valueBreakdown = [
+      { label: 'Tradable', value: fmtVal(tradableHoldings.reduce((s,h) => s + (h.cmp || h.avgBuy) * h.qty, 0), currency, rate), color: 'var(--accent-blue)' },
+      { label: 'Other Assets', value: fmtVal(otherHoldings.reduce((s,h) => s + (h.cmp || h.avgBuy) * h.qty, 0), currency, rate), color: 'var(--accent-green)' },
+      { label: 'Liabilities', value: fmtVal(liabilities.reduce((s,h) => s + (h.cmp || h.avgBuy) * h.qty, 0), currency, rate), color: 'var(--accent-red)' }
+    ];
   }
 
   return (
-    <div className="page-content page-fade">
-      
-      {/* ── Admin Family Toggle ── */}
-      {activeUser?.role === 'admin' && (
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
-          <div style={{ display: 'flex', background: 'var(--surface-2)', padding: 4, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
-            <button
-              onClick={() => isFamilyMode && toggleFamilyMode()}
-              style={{
-                padding: '6px 20px', borderRadius: 'var(--radius-sm)', border: 'none',
-                background: !isFamilyMode ? 'var(--surface)' : 'transparent',
-                color: !isFamilyMode ? 'var(--text-primary)' : 'var(--text-muted)',
-                boxShadow: !isFamilyMode ? 'var(--shadow-sm)' : 'none',
-                cursor: 'pointer', fontFamily: 'var(--font-sans)', fontWeight: 600, fontSize: 13, transition: 'all 0.2s'
-              }}
-            >
-              My Portfolio
-            </button>
-            <button
-              onClick={() => !isFamilyMode && toggleFamilyMode()}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '6px 20px', borderRadius: 'var(--radius-sm)', border: 'none',
-                background: isFamilyMode ? 'var(--surface)' : 'transparent',
-                color: isFamilyMode ? 'var(--accent-blue)' : 'var(--text-muted)',
-                boxShadow: isFamilyMode ? 'var(--shadow-sm)' : 'none',
-                cursor: 'pointer', fontFamily: 'var(--font-sans)', fontWeight: 600, fontSize: 13, transition: 'all 0.2s'
-              }}
-            >
-              <Users size={14} /> Family Aggregate
-            </button>
-          </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 12 }}>
-              <div style={{width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-green)'}} /> Offline Mode
-            </div>
-            {!isFamilyMode && (
+    <div className="page-container">
+      <div className="page-content page-fade">
+        
+        {/* ── Admin Family Toggle ── */}
+        {activeUser?.role === 'admin' && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+            <div style={{ display: 'flex', background: 'var(--surface-2)', padding: 4, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
               <button
-                onClick={() => { setEditingHolding(null); setIsModalOpen(true); }}
+                onClick={() => isFamilyMode && toggleFamilyMode()}
                 style={{
-                  background: 'var(--accent-gold)', color: '#080E1E', border: 'none', padding: '6px 12px',
-                  borderRadius: 'var(--radius-sm)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13
+                  padding: '6px 20px', borderRadius: 'var(--radius-sm)', border: 'none',
+                  background: !isFamilyMode ? 'var(--surface)' : 'transparent',
+                  color: !isFamilyMode ? 'var(--text-primary)' : 'var(--text-muted)',
+                  boxShadow: !isFamilyMode ? 'var(--shadow-sm)' : 'none',
+                  cursor: 'pointer', fontFamily: 'var(--font-sans)', fontWeight: 600, fontSize: 13, transition: 'all 0.2s'
                 }}
               >
-                <Plus size={14} /> Add Holding
+                My Portfolio
               </button>
-            )}
+              <button
+                onClick={() => !isFamilyMode && toggleFamilyMode()}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '6px 20px', borderRadius: 'var(--radius-sm)', border: 'none',
+                  background: isFamilyMode ? 'var(--surface)' : 'transparent',
+                  color: isFamilyMode ? 'var(--accent-blue)' : 'var(--text-muted)',
+                  boxShadow: isFamilyMode ? 'var(--shadow-sm)' : 'none',
+                  cursor: 'pointer', fontFamily: 'var(--font-sans)', fontWeight: 600, fontSize: 13, transition: 'all 0.2s'
+                }}
+              >
+                <Users size={14} /> Family Aggregate
+              </button>
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 12 }}>
+                <div style={{width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-green)'}} /> Offline Mode
+              </div>
+              {!isFamilyMode && (
+                <button
+                  onClick={() => { setEditingHolding(null); setIsModalOpen(true); }}
+                  style={{
+                    background: 'var(--accent-gold)', color: '#080E1E', border: 'none', padding: '6px 12px',
+                    borderRadius: 'var(--radius-sm)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13
+                  }}
+                >
+                  <Plus size={14} /> Add Holding
+                </button>
+              )}
+            </div>
           </div>
+        )}
+
+        {/* KPI Row */}
+        <div className="kpi-grid" style={{ marginBottom: 24 }}>
+          <KPICard
+            icon={Wallet}
+            label="Total Net Worth"
+            value={fmtVal(netWorth, currency, rate)}
+            delta={0} // Hide delta for net worth in MVP
+            deltaLabel="Assets - Liabilities"
+            glowColor="var(--accent-blue)"
+            iconBg="var(--accent-blue-dim)"
+            breakdown={valueBreakdown}
+          />
+          <KPICard
+            icon={dayGain >= 0 ? TrendingUp : TrendingDown}
+            label="Day Gain"
+            value={fmtVal(Math.abs(dayGain), currency, rate)}
+            delta={dayGainPct}
+            deltaLabel="Today"
+            glowColor={dayGain >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}
+            iconBg={dayGain >= 0 ? 'var(--accent-green-dim)' : 'var(--accent-red-dim)'}
+          />
+          <KPICard
+            icon={totalPnl >= 0 ? ArrowUpRight : ArrowDownRight}
+            label="Total P&L"
+            value={fmtVal(Math.abs(totalPnl), currency, rate)}
+            delta={totalPnlPct}
+            deltaLabel="All Time"
+            glowColor={totalPnl >= 0 ? 'var(--accent-purple)' : 'var(--accent-red)'}
+            iconBg={totalPnl >= 0 ? 'var(--accent-purple-dim)' : 'var(--accent-red-dim)'}
+          />
+          <KPICard
+            icon={Percent}
+            label="Est. XIRR"
+            value={`${xirr.toFixed(1)}%`}
+            delta={0}
+            deltaLabel="Annualized"
+            glowColor="var(--accent-gold)"
+            iconBg="var(--accent-gold-dim)"
+          />
         </div>
-      )}
 
-      <PortfolioFilters filters={filters} setFilters={setFilters} availableUsers={users} />
-      <NetWorthChart filters={filters} />
+        <PortfolioFilters filters={filters} setFilters={setFilters} availableUsers={users} />
+        <NetWorthChart filters={filters} />
 
-      {/* ── Net Worth Grid ── */}
-      <NetWorthGrid holdings={filteredHoldings} currency={currency} rate={rate} />
-
-      {/* KPI Row (Now focuses on Tradable Equity Portfolio Performance + Net Worth) */}
-      <h2 style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-        Portfolio Performance
-      </h2>
-      <div className="kpi-grid">
-        <KPICard
-          icon={Wallet}
-          label="Total Net Worth"
-          value={fmtVal(netWorth, currency, rate)}
-          delta={0} // Hide delta for net worth in MVP
-          deltaLabel="Assets - Liabilities"
-          glowColor="var(--accent-blue)"
-          iconBg="var(--accent-blue-dim)"
-          breakdown={valueBreakdown}
-        />
-        <KPICard
-          icon={dayGain >= 0 ? TrendingUp : TrendingDown}
-          label="Day Gain"
-          value={fmtVal(Math.abs(dayGain), currency, rate)}
-          delta={dayGainPct}
-          deltaLabel="today"
-          glowColor={dayGain >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}
-          iconBg={dayGain >= 0 ? 'var(--accent-green-dim)' : 'var(--accent-red-dim)'}
-        />
-        <KPICard
-          icon={totalPnl >= 0 ? ArrowUpRight : ArrowDownRight}
-          label="Total P&L"
-          value={fmtVal(Math.abs(totalPnl), currency, rate)}
-          delta={totalPnlPct}
-          deltaLabel="vs invested"
-          glowColor={totalPnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}
-          iconBg={totalPnl >= 0 ? 'var(--accent-green-dim)' : 'var(--accent-red-dim)'}
-        />
-        <KPICard
-          icon={Percent}
-          label="XIRR"
-          value={`${xirr.toFixed(1)}%`}
-          delta={xirr}
-          deltaLabel="annualised"
-          glowColor="var(--accent-amber)"
-          iconBg="var(--accent-amber-dim)"
-        />
-      </div>
+        {/* ── Net Worth Grid ── */}
+        <NetWorthGrid holdings={filteredHoldings} currency={currency} rate={rate} />
 
       {/* Holdings Table */}
       <HoldingsTable 
@@ -469,11 +461,22 @@ export default function Portfolio() {
         editingHolding={editingHolding} 
       />
 
-      <div className="bottom-grid" style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '32px' }}>
-        <div style={{ width: '400px' }}>
-          <SectorDonut holdings={filteredHoldings.filter(h => ['IND_EQUITY', 'US_EQUITY', 'MF'].includes(h.assetClass))} />
-        </div>
+      {/* Advanced Analytics Grid */}
+      <h2 style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '16px', marginTop: '32px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        Portfolio Analytics
+      </h2>
+      <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', 
+        gap: '20px', 
+        marginBottom: '40px' 
+      }}>
+        <AssetAllocation holdings={filteredHoldings} />
+        <SectorDonut holdings={filteredHoldings.filter(h => ['IND_EQUITY', 'US_EQUITY', 'MF'].includes(h.assetClass))} />
+        <PortfolioWeights holdings={filteredHoldings} />
+        <TopMovers holdings={filteredHoldings} currency={currency} rate={rate} />
       </div>
+    </div>
     </div>
   );
 }

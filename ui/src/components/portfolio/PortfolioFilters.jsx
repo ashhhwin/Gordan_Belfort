@@ -1,4 +1,3 @@
-import React from 'react';
 import { useStore } from '../../store';
 
 export default function PortfolioFilters({ filters, setFilters, availableUsers }) {

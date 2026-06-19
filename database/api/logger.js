@@ -6,8 +6,8 @@ import fs from 'fs';
 
 const { Client } = pkg;
 
-// Load .env relative to this file
-dotenv.config({ path: path.join(process.cwd(), '../../.env') });
+// Load .env relative to this file and silence dotenvx so it doesn't pollute stdout
+dotenv.config({ path: path.join(process.cwd(), '../../.env'), quiet: true });
 
 const client = new Client({
   user: process.env.PGUSER || process.env.USER,

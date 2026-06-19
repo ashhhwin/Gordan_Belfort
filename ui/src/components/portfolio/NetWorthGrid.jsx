@@ -1,7 +1,6 @@
-import React from 'react';
 import { 
   Building2, Globe, PieChart, Briefcase, Car, PiggyBank, 
-  Landmark, Receipt, ScrollText, CreditCard, Award
+  Landmark, ScrollText, CreditCard, Award
 } from 'lucide-react';
 
 const ASSET_CATEGORIES = [
