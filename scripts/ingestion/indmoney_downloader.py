@@ -129,5 +129,8 @@ def download_indmoney_report():
     return save_path
 
 
+import gc
+
 if __name__ == "__main__":
     download_indmoney_report()
+    gc.collect()

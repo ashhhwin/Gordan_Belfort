@@ -6,7 +6,6 @@ from langgraph.graph import StateGraph, END
 
 from api.graph.state import AgentState
 from api.graph.nodes.thinking import thinking_node
-from api.graph.nodes.supervisor import supervisor_node
 from api.graph.nodes.simulation import simulation_node
 from api.graph.nodes.conversation import conversation_node
 from api.graph.nodes.database_agent import database_node

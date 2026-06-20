@@ -46,7 +46,6 @@ import imaplib
 import email
 import email.policy
 from datetime import datetime
-from pathlib import Path
 
 import pikepdf
 from dotenv import load_dotenv
@@ -164,7 +163,7 @@ def poll_for_cams_email(since_epoch: float, label: str) -> bytes | None:
                 msg = email.message_from_bytes(msg_data[0][1], policy=email.policy.default)
                 for part in msg.walk():
                     ct = part.get_content_type()
-                    cd = part.get_content_disposition() or ""
+                    part.get_content_disposition() or ""
                     fname = part.get_filename() or ""
                     if ct == "application/pdf" or (fname.lower().endswith(".pdf")):
                         _log(label, f"Found attachment: {fname}")
@@ -231,7 +230,7 @@ def run_for_member(member: dict) -> dict:
         ts        = datetime.now().strftime("%Y%m%d_%H%M%S")
         base_name = f"{email_addr.split('@')[0]}_{pan_tag}_{ts}"
 
-        _log(label, f"Submitting CAMS request...")
+        _log(label, "Submitting CAMS request...")
         submit_time = time.time()
 
         ok = request_cas(

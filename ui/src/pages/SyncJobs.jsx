@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { runSyncJob, deleteSyncLog } from "../data/userManager";
+import toast from "react-hot-toast";
 
 const API_BASE = "http://localhost:5005/api";
 
@@ -48,28 +49,43 @@ export default function SyncJobs() {
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
-    const interval = setInterval(loadData, isSyncing ? 2000 : 30000);
+    const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (isSyncing) {
+      const interval = setInterval(loadData, 2000);
+      return () => clearInterval(interval);
+    }
   }, [isSyncing]);
 
   const handleRunSync = async (jobName) => {
     setIsSyncing(true);
     try {
+      let msg = "Sync started";
       if (jobName === "NSE Market Data") {
-        await axios.post(`${API_BASE}/nse-sync-run`);
+        const res = await axios.post(`${API_BASE}/nse-sync-run`);
+        msg = res.data.message || msg;
       } else if (jobName === "GCS Market Data") {
-        await axios.post(`${API_BASE}/gcs-market-run`);
+        const res = await axios.post(`${API_BASE}/gcs-market-run`);
+        msg = res.data.message || msg;
       } else if (jobName === "GCS Analyst Estimates Data") {
-        await axios.post(`${API_BASE}/gcs-estimates-run`);
+        const res = await axios.post(`${API_BASE}/gcs-estimates-run`);
+        msg = res.data.message || msg;
       } else if (jobName === "GCS Earnings Calendar") {
-        await axios.post(`${API_BASE}/gcs-earnings-run`);
+        const res = await axios.post(`${API_BASE}/gcs-earnings-run`);
+        msg = res.data.message || msg;
       } else {
         await runSyncJob();
       }
+      toast.success(msg);
+      setTimeout(loadData, 1000);
     } catch (err) {
       console.error("Sync failed to start", err);
+      toast.error("Failed to start sync");
+      setIsSyncing(false);
     }
   };
 

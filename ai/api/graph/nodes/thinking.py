@@ -6,7 +6,6 @@ Streams thinking steps to the frontend in real-time.
 
 import time
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import AIMessage
 from langsmith import traceable
 from api.config import get_llm, LLM_THINKING_TEMPERATURE
 

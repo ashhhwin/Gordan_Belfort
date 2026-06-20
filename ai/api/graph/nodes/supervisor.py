@@ -76,7 +76,7 @@ async def supervisor_node(state, config):
                     "timestamp": __import__('time').time()
                 }]
             }
-        except Exception as e:
+        except Exception:
             import traceback
             traceback.print_exc()
             return {"next_agent": "conversation"}

@@ -9,7 +9,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "dev:app": "concurrently -k \"vite --port 5173\" \"wait-on tcp:5173 && electron .\" \"cd ../ai && .venv/bin/uvicorn api.main:app --port 8000 --reload\"",
+    "dev:app": "concurrently -k \"vite --port 5173\" \"wait-on tcp:5173 && electron . --js-flags=--max-old-space-size=256\" \"cd ../ai && .venv/bin/uvicorn api.main:app --port 8000\"",
     "build:app": "vite build && electron-builder"
   },
   "dependencies": {

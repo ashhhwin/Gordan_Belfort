@@ -3,10 +3,9 @@ Database Agent Node.
 ReAct agent specialized in querying financial databases — holdings, market data, portfolio analysis.
 """
 
-from langchain_core.prompts import ChatPromptTemplate
 from langgraph.prebuilt import create_react_agent
 from langsmith import traceable
-from api.config import get_llm, PERSONAS, DEFAULT_PERSONA
+from api.config import get_llm
 from api.tools.database_tools import (
     get_portfolio_holdings,
     get_net_worth_summary,
@@ -14,6 +13,7 @@ from api.tools.database_tools import (
     run_readonly_sql,
     get_asset_allocation,
 )
+from api.tools.alert_tools import send_telegram_alert
 
 DATABASE_AGENT_PROMPT = """You are the Database Query Agent inside the Gordan Belfort AI system.
 You have access to a PostgreSQL database containing the user's real financial data.
@@ -24,6 +24,7 @@ AVAILABLE TOOLS:
 - query_market_data: Get OHLCV data for a specific stock symbol
 - run_readonly_sql: Execute custom SELECT queries
 - get_asset_allocation: Get portfolio allocation percentages
+- send_telegram_alert: Push an urgent notification directly to the user's phone. Use this to alert them of major market moves, sudden drops, or important daily summaries.
 
 RULES:
 - Always use the appropriate tool — never guess or fabricate data.
@@ -43,6 +44,7 @@ def build_database_agent(memory_context: str = ""):
         query_market_data,
         run_readonly_sql,
         get_asset_allocation,
+        send_telegram_alert,
     ]
 
     llm = get_llm(temperature=0.1)

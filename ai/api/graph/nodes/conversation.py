@@ -5,7 +5,6 @@ Rich persona-driven responses with injected long-term memory context.
 """
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import AIMessage
 from langsmith import traceable
 from api.config import get_llm, PERSONAS, DEFAULT_PERSONA
 

@@ -316,6 +316,13 @@ export const useStore = create((set, get) => ({
 
         // If it didn't throw, authentication was successful
         set({ isAuthenticated: true, authError: null });
+        
+        // Trigger login alert
+        fetch('http://localhost:5005/api/login-alert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user: activeUser.name, method: 'WebAuthn (TouchID/FaceID)' })
+        }).catch(console.error);
         get().loadUserHoldings();
         return { success: true };
       } catch (err) {
@@ -351,6 +358,14 @@ export const useStore = create((set, get) => ({
       });
 
       set({ isAuthenticated: true, authError: null });
+
+      // Trigger login alert
+      fetch('http://localhost:5005/api/login-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: activeUser.name, method: 'WebAuthn (TouchID/FaceID)' })
+      }).catch(console.error);
+
       get().loadUserHoldings();
       return { success: true };
     } catch (err) {
@@ -372,6 +387,14 @@ export const useStore = create((set, get) => ({
     const hash = await sha256(pin);
     if (hash === activeUser.pin_hash) {
       set({ isAuthenticated: true, authError: null });
+
+      // Trigger login alert
+      fetch('http://localhost:5005/api/login-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: activeUser.name, method: 'PIN' })
+      }).catch(console.error);
+
       get().loadUserHoldings();
       return true;
     }

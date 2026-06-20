@@ -206,5 +206,8 @@ def run():
 # =========================
 # ENTRY POINT
 # =========================
+import gc
+
 if __name__ == "__main__":
     run()
+    gc.collect()

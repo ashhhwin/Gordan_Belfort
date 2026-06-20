@@ -59,13 +59,10 @@ def generate_candlestick_chart(symbol: str, days: int = 60) -> str:
         symbol: Stock ticker symbol
         days: Number of trading days to display (default: 60)
     """
-    import numpy as np
     import pandas as pd
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
-    from matplotlib.patches import FancyBboxPatch
-    import matplotlib.dates as mdates
     import psycopg2
     from api.config import PG_HOST, PG_PORT, PG_NAME, PG_USER, PG_PASSWORD
 
@@ -96,7 +93,6 @@ def generate_candlestick_chart(symbol: str, days: int = 60) -> str:
 
     # Candlesticks
     ax1.set_facecolor('#0D1117')
-    width = 0.6
     for i, row in df.iterrows():
         color = '#30D158' if row['close'] >= row['open'] else '#FF453A'
         ax1.plot([i, i], [row['low'], row['high']], color=color, linewidth=0.8)
@@ -156,7 +152,6 @@ def generate_comparison_chart(symbols: str, metric: str = "returns", days: int =
         metric: "returns" (normalized %) or "price" (absolute prices)
         days: Number of trading days (default: 90)
     """
-    import numpy as np
     import pandas as pd
     import matplotlib
     matplotlib.use('Agg')

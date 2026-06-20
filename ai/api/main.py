@@ -3,7 +3,7 @@ Gordan Belfort AI Brain — FastAPI Backend.
 Enhanced with conversation management, rich SSE streaming, and model selection.
 """
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -188,6 +188,54 @@ async def chat_stream(req: ChatRequest):
         event_generator(req.message, session, req.persona, req.model),
         media_type="text/event-stream"
     )
+
+@app.post("/chat/sync")
+async def chat_sync(req: ChatRequest):
+    """Synchronous chat endpoint that returns just the final text response."""
+    session_id = req.session_id or str(uuid.uuid4())
+    config = {"configurable": {"thread_id": session_id}}
+
+    # Ensure conversation exists in DB
+    conn = _get_convos_db()
+    now = time.time()
+    cur = conn.cursor()
+    cur.execute("SELECT thread_id FROM conversations WHERE thread_id = ?", (session_id,))
+    if not cur.fetchone():
+        cur.execute(
+            "INSERT INTO conversations (thread_id, title, persona, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, req.message[:50] + "..." if len(req.message) > 50 else req.message,
+             req.persona or DEFAULT_PERSONA, req.model or LLM_MODEL, now, now)
+        )
+    else:
+        cur.execute("UPDATE conversations SET updated_at = ? WHERE thread_id = ?", (now, session_id))
+    conn.commit()
+    conn.close()
+
+    input_state = {
+        "messages": [HumanMessage(content=req.message)],
+        "persona": req.persona or DEFAULT_PERSONA,
+    }
+
+    try:
+        async with AsyncSqliteSaver.from_conn_string(CHECKPOINT_DB_PATH) as saver:
+            app_graph = build_app_graph(saver)
+            result = await app_graph.ainvoke(input_state, config=config)
+            
+            # Update message count
+            conn = _get_convos_db()
+            conn.execute(
+                "UPDATE conversations SET message_count = message_count + 2, updated_at = ? WHERE thread_id = ?",
+                (time.time(), session_id)
+            )
+            conn.commit()
+            conn.close()
+            
+            final_message = result["messages"][-1].content
+            return {"response": final_message}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── Conversation Management ──

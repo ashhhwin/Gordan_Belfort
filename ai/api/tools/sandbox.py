@@ -3,9 +3,7 @@ Secure Python sandbox tool for the Gordan Belfort AI agent.
 Enhanced with timeout protection, pre-imported financial libs, and memory limits.
 """
 
-import sys
 import io
-import base64
 import signal
 import contextlib
 from langchain_core.tools import tool
@@ -112,7 +110,7 @@ def python_sandbox(code: str) -> str:
                 exec(full_code, {"__builtins__": __builtins__})
             except TimeoutError:
                 return "⏱️ Execution timed out after 30 seconds. Try optimizing your code or reducing data size."
-            except Exception as e:
+            except Exception:
                 import traceback
                 traceback.print_exc(file=stderr)
     finally:

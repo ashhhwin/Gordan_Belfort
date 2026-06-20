@@ -6,9 +6,7 @@ Uses SQLite for persistent, cross-session memory storage.
 import json
 import time
 import sqlite3
-import os
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import HumanMessage
 from langsmith import traceable
 from api.config import get_llm, MEMORY_DB_PATH
 
@@ -205,7 +203,7 @@ async def memory_write_node(state, config):
         conn.commit()
         conn.close()
 
-    except Exception as e:
+    except Exception:
         # Memory write failure should not crash the graph
         import traceback
         traceback.print_exc()

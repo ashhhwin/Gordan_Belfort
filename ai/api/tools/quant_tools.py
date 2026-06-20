@@ -311,7 +311,6 @@ def markov_chain_analysis(symbol: str, states: int = 3, lookback_days: int = 252
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
-    from matplotlib.patches import FancyArrowPatch
     import psycopg2
     from api.config import PG_HOST, PG_PORT, PG_NAME, PG_USER, PG_PASSWORD
 
@@ -360,7 +359,7 @@ def markov_chain_analysis(symbol: str, states: int = 3, lookback_days: int = 252
     # Heatmap
     ax1 = axes[0]
     ax1.set_facecolor('#0D1117')
-    im = ax1.imshow(trans_prob, cmap='Blues', vmin=0, vmax=1)
+    ax1.imshow(trans_prob, cmap='Blues', vmin=0, vmax=1)
     for i in range(states):
         for j in range(states):
             ax1.text(j, i, f'{trans_prob[i, j]:.2f}', ha='center', va='center',
@@ -570,7 +569,6 @@ def correlation_analysis(symbols: str, days: int = 120) -> str:
         symbols: Comma-separated list of stock symbols (e.g., "RELIANCE,TCS,INFY,HDFC")
         days: Number of trading days to analyze (default: 120)
     """
-    import numpy as np
     import pandas as pd
     import matplotlib
     matplotlib.use('Agg')
@@ -662,7 +660,7 @@ def portfolio_risk_analysis(confidence_level: float = 0.95) -> str:
         # Get returns for each holding
         returns_data = {}
         for sym in holdings['symbol'].unique():
-            df = pd.read_sql(f"SELECT date, close FROM market_data WHERE symbol = %s ORDER BY date DESC LIMIT 252", conn, params=(sym,))
+            df = pd.read_sql("SELECT date, close FROM market_data WHERE symbol = %s ORDER BY date DESC LIMIT 252", conn, params=(sym,))
             if len(df) > 10:
                 df = df.sort_values('date')
                 returns_data[sym] = df['close'].astype(float).pct_change().dropna().values
