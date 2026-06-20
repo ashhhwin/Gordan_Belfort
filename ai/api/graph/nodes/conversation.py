@@ -27,7 +27,9 @@ async def conversation_node(state, config):
 
     full_prompt = system_prompt + memory_context
 
-    llm = get_llm(temperature=0.7)
+    model = state.get("model")
+    temp = state.get("temperature") if state.get("temperature") is not None else 0.7
+    llm = get_llm(model=model, temperature=temp)
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", full_prompt),

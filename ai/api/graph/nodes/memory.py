@@ -50,7 +50,7 @@ MEMORY TYPES:
 
 For each memory, output a JSON array:
 [
-  {"content": "...", "memory_type": "fact|insight|preference|pattern", "ticker": "SYMBOL or null", "tags": "comma,separated,tags"}
+  {{"content": "...", "memory_type": "fact|insight|preference|pattern", "ticker": "SYMBOL or null", "tags": "comma,separated,tags"}}
 ]
 
 If nothing worth remembering, output: []"""

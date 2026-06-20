@@ -27,7 +27,7 @@ def get_portfolio_holdings() -> str:
         conn = _get_conn()
         cur = conn.cursor()
         cur.execute("""
-            SELECT symbol, company_name, asset_class, exchange, qty, avg_buy, cmp, 
+            SELECT symbol, name as company_name, asset_class, qty, avg_buy, cmp, 
                    (cmp - avg_buy) * qty AS unrealized_pnl,
                    ROUND(((cmp - avg_buy) / NULLIF(avg_buy, 0)) * 100, 2) AS pnl_pct
             FROM holdings 

@@ -37,9 +37,9 @@ if (TELEGRAM_TOKEN && TELEGRAM_CHAT_ID) {
       });
 
       const response = `🟢 *Stock Pilot is ONLINE*\n\n*Last Portfolio Sync*: ${lastSynced}\n\n*Recent Jobs*:\n${jobsText}`;
-      bot.sendMessage(TELEGRAM_CHAT_ID, response, { parse_mode: 'Markdown' });
+      bot.sendMessage(TELEGRAM_CHAT_ID, response, { parse_mode: 'Markdown' }).catch(console.error);
     } catch (err) {
-      bot.sendMessage(TELEGRAM_CHAT_ID, `🔴 *System Error*\n${err.message}`, { parse_mode: 'Markdown' });
+      bot.sendMessage(TELEGRAM_CHAT_ID, `🔴 *System Error*\n${err.message}`, { parse_mode: 'Markdown' }).catch(console.error);
     }
   });
 
@@ -55,17 +55,27 @@ if (TELEGRAM_TOKEN && TELEGRAM_CHAT_ID) {
       const response = await fetch('http://localhost:8000/chat/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg.text, session_id: 'telegram-session' })
+        body: JSON.stringify({ 
+          message: msg.text, 
+          session_id: `telegram-session-${uuidv4()}`,
+          model: 'qwen3:latest',
+          temperature: 0.0
+        })
       });
       
       const data = await response.json();
       if (data.response) {
-        bot.sendMessage(TELEGRAM_CHAT_ID, data.response, { parse_mode: 'Markdown' });
+        try {
+          await bot.sendMessage(TELEGRAM_CHAT_ID, data.response, { parse_mode: 'Markdown' });
+        } catch (sendErr) {
+          // Fallback if markdown parsing fails
+          await bot.sendMessage(TELEGRAM_CHAT_ID, data.response);
+        }
       } else {
-        bot.sendMessage(TELEGRAM_CHAT_ID, `⚠️ *Error*: Invalid response from AI`, { parse_mode: 'Markdown' });
+        await bot.sendMessage(TELEGRAM_CHAT_ID, `⚠️ *Error*: Invalid response from AI`, { parse_mode: 'Markdown' }).catch(console.error);
       }
     } catch (err) {
-      bot.sendMessage(TELEGRAM_CHAT_ID, `⚠️ *Error hitting AI endpoint*\n${err.message}`, { parse_mode: 'Markdown' });
+      bot.sendMessage(TELEGRAM_CHAT_ID, `⚠️ *Error hitting AI endpoint*\n${err.message}`, { parse_mode: 'Markdown' }).catch(console.error);
     }
   });
 

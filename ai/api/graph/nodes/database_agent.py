@@ -37,7 +37,7 @@ RULES:
 
 
 @traceable(name="Database Agent Build")
-def build_database_agent(memory_context: str = ""):
+def build_database_agent(memory_context: str = "", model: str = None, temperature: float = 0.1):
     tools = [
         get_portfolio_holdings,
         get_net_worth_summary,
@@ -47,7 +47,7 @@ def build_database_agent(memory_context: str = ""):
         send_telegram_alert,
     ]
 
-    llm = get_llm(temperature=0.1)
+    llm = get_llm(model=model, temperature=temperature)
     prompt = DATABASE_AGENT_PROMPT.format(memory_context=memory_context)
     return create_react_agent(llm, tools=tools, prompt=prompt)
 
@@ -63,7 +63,11 @@ async def database_node(state, config):
                 f"- [{m['memory_type']}] {m['content']}" for m in memories
             )
 
-    agent = build_database_agent(memory_context)
+    agent = build_database_agent(
+        memory_context,
+        state.get("model"),
+        state.get("temperature") if state.get("temperature") is not None else 0.1
+    )
     result = await agent.ainvoke({"messages": state["messages"]}, config=config)
 
     return {

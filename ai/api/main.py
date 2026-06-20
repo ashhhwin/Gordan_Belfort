@@ -62,6 +62,7 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = None
     persona: Optional[str] = None
     model: Optional[str] = None
+    temperature: Optional[float] = None
 
 
 class ConversationCreate(BaseModel):
@@ -76,7 +77,7 @@ class ConversationUpdate(BaseModel):
 
 # ── SSE Event Generator ──
 
-async def event_generator(message: str, session_id: str, persona: str = None, model: str = None):
+async def event_generator(message: str, session_id: str, persona: str = None, model: str = None, temperature: float = None):
     """Enhanced SSE streaming with thinking, tool, memory, and token events."""
     config = {"configurable": {"thread_id": session_id}}
 
@@ -99,6 +100,8 @@ async def event_generator(message: str, session_id: str, persona: str = None, mo
     input_state = {
         "messages": [HumanMessage(content=message)],
         "persona": persona or DEFAULT_PERSONA,
+        "model": model or LLM_MODEL,
+        "temperature": temperature,
     }
 
     try:
@@ -185,7 +188,7 @@ async def event_generator(message: str, session_id: str, persona: str = None, mo
 async def chat_stream(req: ChatRequest):
     session = req.session_id or str(uuid.uuid4())
     return StreamingResponse(
-        event_generator(req.message, session, req.persona, req.model),
+        event_generator(req.message, session, req.persona, req.model, req.temperature),
         media_type="text/event-stream"
     )
 
@@ -214,6 +217,8 @@ async def chat_sync(req: ChatRequest):
     input_state = {
         "messages": [HumanMessage(content=req.message)],
         "persona": req.persona or DEFAULT_PERSONA,
+        "model": req.model or LLM_MODEL,
+        "temperature": req.temperature,
     }
 
     try:
@@ -231,7 +236,15 @@ async def chat_sync(req: ChatRequest):
             conn.close()
             
             final_message = result["messages"][-1].content
-            return {"response": final_message}
+            
+            thinking_text = ""
+            if "thinking_steps" in result and result["thinking_steps"]:
+                thinking_text = "💭 *Thinking Process:*\n"
+                for step in result["thinking_steps"]:
+                    thinking_text += f"- *{step['step'].replace('_', ' ').title()}*: {step['content'].strip()[:150]}...\n"
+                thinking_text += "\n"
+
+            return {"response": thinking_text + final_message}
     except Exception as e:
         import traceback
         traceback.print_exc()

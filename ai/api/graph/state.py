@@ -4,7 +4,7 @@ Uses Pydantic-compatible TypedDict with proper reducers.
 """
 
 import operator
-from typing import Annotated, Any, Sequence, TypedDict
+from typing import Annotated, Any, Sequence, TypedDict, Optional
 from langchain_core.messages import BaseMessage
 
 
@@ -50,4 +50,6 @@ class AgentState(TypedDict):
     tool_traces: Annotated[list[ToolTrace], operator.add]
     memory_context: list[MemoryItem]
     persona: str
+    model: Optional[str]
+    temperature: Optional[float]
     metadata: dict[str, Any]

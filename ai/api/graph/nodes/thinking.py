@@ -44,7 +44,9 @@ End with a JSON line: {{"route": "simulation"|"database"|"conversation", "comple
 @traceable(name="Thinking Node")
 async def thinking_node(state, config):
     """Perform chain-of-thought reasoning and determine routing."""
-    llm = get_llm(temperature=LLM_THINKING_TEMPERATURE, streaming=True)
+    model = state.get("model")
+    temp = state.get("temperature") if state.get("temperature") is not None else LLM_THINKING_TEMPERATURE
+    llm = get_llm(model=model, temperature=temp, streaming=True)
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", THINKING_PROMPT),
@@ -68,14 +70,16 @@ async def thinking_node(state, config):
     # Extract JSON from the response
     import json
     import re
-    json_match = re.search(r'\{[^{}]*"route"[^{}]*\}', full_response)
-    if json_match:
-        try:
-            decision = json.loads(json_match.group())
-            route = decision.get("route", "conversation")
-            complexity = decision.get("complexity", "LOW")
-        except json.JSONDecodeError:
-            pass
+    blocks = re.findall(r'\{[^{}]*\}', full_response)
+    for block in reversed(blocks):
+        if '"route"' in block or "'route'" in block:
+            try:
+                decision = json.loads(block)
+                route = decision.get("route", "conversation")
+                complexity = decision.get("complexity", "LOW")
+                break
+            except Exception:
+                pass
 
     # Create structured thinking steps
     now = time.time()

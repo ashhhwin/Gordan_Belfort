@@ -66,7 +66,7 @@ CRITICAL RULES:
 
 
 @traceable(name="Simulation Agent Build")
-def build_simulation_agent(memory_context: str = ""):
+def build_simulation_agent(memory_context: str = "", model: str = None, temperature: float = 0.1):
     tools = [
         # Quant tools
         run_backtest,
@@ -89,7 +89,7 @@ def build_simulation_agent(memory_context: str = ""):
         python_sandbox,
     ]
 
-    llm = get_llm(temperature=0.1)
+    llm = get_llm(model=model, temperature=temperature)
     prompt = SIMULATION_PROMPT.format(memory_context=memory_context)
     return create_react_agent(llm, tools=tools, prompt=prompt)
 
@@ -105,7 +105,11 @@ async def simulation_node(state, config):
                 f"- [{m['memory_type']}] {m['content']}" for m in memories
             )
 
-    agent = build_simulation_agent(memory_context)
+    agent = build_simulation_agent(
+        memory_context,
+        state.get("model"),
+        state.get("temperature") if state.get("temperature") is not None else 0.1
+    )
     result = await agent.ainvoke({"messages": state["messages"]}, config=config)
 
     return {
