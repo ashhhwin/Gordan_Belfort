@@ -1,6 +1,6 @@
-import axios from 'axios';
+import axios from "axios";
 
-const API_BASE = 'http://localhost:5005/api';
+const API_BASE = "http://localhost:5005/api";
 
 // ─── Families ───
 export async function getFamily() {
@@ -10,7 +10,7 @@ export async function getFamily() {
 
 export async function updateFamilyConfig(config) {
   // Assuming family ID is 00000000-0000-0000-0000-000000000001
-  const id = '00000000-0000-0000-0000-000000000001';
+  const id = "00000000-0000-0000-0000-000000000001";
   const { data } = await axios.put(`${API_BASE}/family/${id}/config`, config);
   return data;
 }
@@ -23,24 +23,28 @@ export async function getUsers() {
 
 export async function getUserById(id) {
   const users = await getUsers();
-  return users.find(u => u.id === id) || null;
+  return users.find((u) => u.id === id) || null;
 }
 
 // ─── Auth ───
 export async function setUserWebAuthnCred(userId, credId) {
-  const { data } = await axios.put(`${API_BASE}/users/${userId}`, { webauthn_cred_id: credId });
+  const { data } = await axios.put(`${API_BASE}/users/${userId}`, {
+    webauthn_cred_id: credId,
+  });
   return data;
 }
 
 export async function setUserPinHash(userId, hash) {
-  const { data } = await axios.put(`${API_BASE}/users/${userId}`, { pin_hash: hash });
+  const { data } = await axios.put(`${API_BASE}/users/${userId}`, {
+    pin_hash: hash,
+  });
   return data;
 }
 
 // ─── Holdings ───
 export async function getHoldingsForUser(userId) {
   const { data } = await axios.get(`${API_BASE}/holdings`);
-  return data.filter(h => h.user_id === userId).map(mapHoldingFromDB);
+  return data.filter((h) => h.user_id === userId).map(mapHoldingFromDB);
 }
 
 export async function getFamilyHoldings() {
@@ -114,11 +118,17 @@ function mapHoldingFromDB(h) {
     qty: parseFloat(h.qty),
     dayChange: parseFloat(h.day_change),
     dayChangePct: parseFloat(h.day_change_pct),
-    buyDate: h.buy_date ? h.buy_date.split('T')[0] : null,
+    buyDate: h.buy_date ? h.buy_date.split("T")[0] : null,
   };
 }
 
 export const MEMBER_COLORS = [
-  '#4B7BEC', '#00D4A1', '#F7B731', '#FF4D6A', 
-  '#9B59B6', '#1ABC9C', '#E67E22', '#E91E8C',
+  "#4B7BEC",
+  "#00D4A1",
+  "#F7B731",
+  "#FF4D6A",
+  "#9B59B6",
+  "#1ABC9C",
+  "#E67E22",
+  "#E91E8C",
 ];

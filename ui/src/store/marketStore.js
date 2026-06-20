@@ -1,7 +1,7 @@
-import { create } from 'zustand';
-import axios from 'axios';
+import { create } from "zustand";
+import axios from "axios";
 
-const API_URL = 'http://localhost:5005/api';
+const API_URL = "http://localhost:5005/api";
 
 export const useMarketStore = create((set) => ({
   marketOverview: [],
@@ -16,12 +16,14 @@ export const useMarketStore = create((set) => ({
     set({ isLoadingOverview: true, error: null });
     try {
       const params = new URLSearchParams();
-      if (filters.region) params.append('region', filters.region);
-      if (filters.search) params.append('search', filters.search);
-      if (filters.industry) params.append('industry', filters.industry);
-      if (filters.minCap) params.append('cap_category', filters.minCap);
+      if (filters.region) params.append("region", filters.region);
+      if (filters.search) params.append("search", filters.search);
+      if (filters.industry) params.append("industry", filters.industry);
+      if (filters.minCap) params.append("cap_category", filters.minCap);
 
-      const response = await axios.get(`${API_URL}/market/overview?${params.toString()}`);
+      const response = await axios.get(
+        `${API_URL}/market/overview?${params.toString()}`,
+      );
       set({ marketOverview: response.data, isLoadingOverview: false });
     } catch (error) {
       set({ error: error.message, isLoadingOverview: false });
