@@ -34,13 +34,9 @@ logs/
 *.sqlite
 *.sqlite3
 *.db
-database/data/raw/*.xlsx
-database/data/raw/*.csv
-database/data/raw/*.json
-database/data/processed/*.xlsx
-database/data/processed/*.csv
-database/data/processed/*.json
-
+database/data/raw/
+database/data/processed/
+database/data/cleaned/
 # OS and Editor
 .DS_Store
 .vscode/

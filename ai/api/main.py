@@ -37,7 +37,7 @@ app.add_middleware(
 
 # ── Conversations Database ──
 
-def _get_convos_db():
+def init_db():
     conn = sqlite3.connect(CONVERSATIONS_DB_PATH)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS conversations (
@@ -52,8 +52,13 @@ def _get_convos_db():
         )
     """)
     conn.commit()
-    return conn
+    conn.close()
 
+# Initialize DB schema once on startup
+init_db()
+
+def _get_convos_db():
+    return sqlite3.connect(CONVERSATIONS_DB_PATH)
 
 # ── Request / Response Models ──
 

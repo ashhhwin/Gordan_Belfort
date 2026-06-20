@@ -1,17 +1,21 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useStore } from "../store/index.js";
 
 // Mock the API calls in userManager
 vi.mock("../data/userManager", () => ({
-  getUsers: vi.fn(() => [{ id: "1", name: "Alice", pin_hash: "hash" }]),
-  getFamily: vi.fn(() => ({ id: "f1", name: "Family" })),
-  setUserPinHash: vi.fn(),
-  setUserWebAuthnCred: vi.fn(),
-  getHoldingsForUser: vi.fn(() => []),
-  getFamilyHoldings: vi.fn(() => []),
+  getUsers: vi.fn(() => Promise.resolve([{ id: "1", name: "Alice", pin_hash: "hash" }])),
+  getFamily: vi.fn(() => Promise.resolve({ id: "f1", name: "Family" })),
+  setUserPinHash: vi.fn(() => Promise.resolve()),
+  setUserWebAuthnCred: vi.fn(() => Promise.resolve()),
+  getHoldingsForUser: vi.fn(() => Promise.resolve([])),
+  getFamilyHoldings: vi.fn(() => Promise.resolve([])),
+  getPortfolioHistory: vi.fn(() => Promise.resolve([])),
+  getSyncStatus: vi.fn(() => Promise.resolve({})),
+  getSyncLogs: vi.fn(() => Promise.resolve([])),
+  getCronStatus: vi.fn(() => Promise.resolve([])),
 }));
 
 describe("Auth & Store Logic", () => {
@@ -34,6 +38,10 @@ describe("Auth & Store Logic", () => {
         invoke: vi.fn().mockRejectedValue(new Error("Touch ID was cancelled.")),
       },
     }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("19. Store Init: initApp successfully fetches DB data", async () => {
@@ -106,7 +114,7 @@ describe("Auth & Store Logic", () => {
     };
     const res = await useStore.getState().registerTouchId();
     expect(res.success).toBe(false);
-    expect(useStore.getState().authError).toBe("Touch ID was cancelled.");
+    expect(useStore.getState().authError).toBe("Touch ID cancelled");
   });
 
   it("27. Currency Toggle: setCurrency correctly toggles global state", () => {

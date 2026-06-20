@@ -16,7 +16,10 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '../../.env'))
 # =========================
 BUCKET     = "historical_data_evoke"
 BASE_PATH  = "market_data/daily"
-KEY_PATH   = os.path.join(os.path.dirname(__file__), "../../secrets/tonal-nucleus-464617-n2-3af9df63532c.json")
+KEY_PATH   = os.getenv("GCP_SERVICE_ACCOUNT_KEY_PATH")
+
+if not KEY_PATH:
+    raise ValueError("GCP_SERVICE_ACCOUNT_KEY_PATH is not set in the environment.")
 
 DB_HOST     = os.getenv("DB_HOST", "localhost")
 DB_NAME     = os.getenv("DB_NAME", "stock_pilot")

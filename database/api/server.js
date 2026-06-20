@@ -639,25 +639,26 @@ app.get('/api/market/estimates/:symbol', async (req, res) => {
   }
 });
 
+const dynamicPools = new Map();
+
 async function executeDynamicQuery(query, params, dbName) {
   const currentDb = process.env.PGDATABASE || 'stock_pilot';
   if (!dbName || dbName === currentDb) {
     return pool.query(query, params);
   }
-  const client = new Client({
-    user: process.env.PGUSER || process.env.USER,
-    host: process.env.PGHOST || 'localhost',
-    database: dbName,
-    password: process.env.PGPASSWORD || '',
-    port: process.env.PGPORT || 5432,
-  });
-  await client.connect();
-  try {
-    const res = await client.query(query, params);
-    return res;
-  } finally {
-    await client.end();
+  
+  if (!dynamicPools.has(dbName)) {
+    const newPool = new Pool({
+      user: process.env.PGUSER || process.env.USER,
+      host: process.env.PGHOST || 'localhost',
+      database: dbName,
+      password: process.env.PGPASSWORD || '',
+      port: process.env.PGPORT || 5432,
+    });
+    dynamicPools.set(dbName, newPool);
   }
+  
+  return dynamicPools.get(dbName).query(query, params);
 }
 
 app.get('/api/database/meta', async (req, res) => {
