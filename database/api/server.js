@@ -22,6 +22,29 @@ if (TELEGRAM_TOKEN && TELEGRAM_CHAT_ID) {
   bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
   console.log('Telegram Bot Initialized');
 
+  // Safe Telegram message sender with basic Markdown -> HTML conversion
+  async function sendTelegramSafe(text) {
+    if (!bot || !TELEGRAM_CHAT_ID) return;
+    
+    // Convert standard markdown to HTML
+    let html = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+      .replace(/\*(.*?)\*/g, '<i>$1</i>')
+      .replace(/__(.*?)__/g, '<u>$1</u>')
+      .replace(/`(.*?)`/g, '<code>$1</code>')
+      .replace(/```([\s\S]*?)```/g, '<pre>$1</pre>');
+      
+    try {
+      return await bot.sendMessage(TELEGRAM_CHAT_ID, html, { parse_mode: 'HTML' });
+    } catch (err) {
+      // Fallback to plain text if HTML parsing fails
+      return await bot.sendMessage(TELEGRAM_CHAT_ID, text);
+    }
+  }
+
   // Listen for /health or /ping commands
   bot.onText(/\/(health|ping|status)/, async (msg) => {
     if (msg.chat.id.toString() !== TELEGRAM_CHAT_ID) return; // Ignore unauthorized chats
@@ -36,10 +59,10 @@ if (TELEGRAM_TOKEN && TELEGRAM_CHAT_ID) {
         jobsText += `- ${j.job_name}: ${j.status} (${new Date(j.started_at).toLocaleTimeString()})\n`;
       });
 
-      const response = `🟢 *Stock Pilot is ONLINE*\n\n*Last Portfolio Sync*: ${lastSynced}\n\n*Recent Jobs*:\n${jobsText}`;
-      bot.sendMessage(TELEGRAM_CHAT_ID, response, { parse_mode: 'Markdown' }).catch(console.error);
+      const response = `🟢 <b>Stock Pilot is ONLINE</b>\n\n<b>Last Portfolio Sync</b>: ${lastSynced}\n\n<b>Recent Jobs</b>:\n${jobsText}`;
+      sendTelegramSafe(response).catch(console.error);
     } catch (err) {
-      bot.sendMessage(TELEGRAM_CHAT_ID, `🔴 *System Error*\n${err.message}`, { parse_mode: 'Markdown' }).catch(console.error);
+      sendTelegramSafe(`🔴 <b>System Error</b>\n${err.message}`).catch(console.error);
     }
   });
 
@@ -65,17 +88,12 @@ if (TELEGRAM_TOKEN && TELEGRAM_CHAT_ID) {
       
       const data = await response.json();
       if (data.response) {
-        try {
-          await bot.sendMessage(TELEGRAM_CHAT_ID, data.response, { parse_mode: 'Markdown' });
-        } catch (sendErr) {
-          // Fallback if markdown parsing fails
-          await bot.sendMessage(TELEGRAM_CHAT_ID, data.response);
-        }
+        await sendTelegramSafe(data.response);
       } else {
-        await bot.sendMessage(TELEGRAM_CHAT_ID, `⚠️ *Error*: Invalid response from AI`, { parse_mode: 'Markdown' }).catch(console.error);
+        await sendTelegramSafe(`⚠️ <b>Error</b>: Invalid response from AI`).catch(console.error);
       }
     } catch (err) {
-      bot.sendMessage(TELEGRAM_CHAT_ID, `⚠️ *Error hitting AI endpoint*\n${err.message}`, { parse_mode: 'Markdown' }).catch(console.error);
+      sendTelegramSafe(`⚠️ <b>Error hitting AI endpoint</b>\n${err.message}`).catch(console.error);
     }
   });
 
@@ -86,8 +104,19 @@ if (TELEGRAM_TOKEN && TELEGRAM_CHAT_ID) {
 // Global alert function that can be used inside server.js
 function sendTelegramAlert(message) {
   if (bot && TELEGRAM_CHAT_ID) {
-    bot.sendMessage(TELEGRAM_CHAT_ID, message, { parse_mode: 'Markdown' }).catch(err => {
-      console.error('Failed to send Telegram alert:', err);
+    // We recreate sendTelegramSafe logic here in case it's called outside the init block
+    let html = message
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+      .replace(/\*(.*?)\*/g, '<i>$1</i>')
+      .replace(/__(.*?)__/g, '<u>$1</u>')
+      .replace(/`(.*?)`/g, '<code>$1</code>')
+      .replace(/```([\s\S]*?)```/g, '<pre>$1</pre>');
+      
+    bot.sendMessage(TELEGRAM_CHAT_ID, html, { parse_mode: 'HTML' }).catch(err => {
+      bot.sendMessage(TELEGRAM_CHAT_ID, message).catch(console.error);
     });
   }
 }
