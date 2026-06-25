@@ -1,97 +1,67 @@
 """
-Supervisor / Router Node.
-Uses structured output to reliably route to the correct sub-agent.
-Upgraded to Qwen 3.5 with proper Pydantic structured output.
+Supervisor Node — Loads prompt from file, uses get_supervisor_llm() for deterministic routing.
 """
 
-from langchain_core.prompts import ChatPromptTemplate
+import time
+from typing import Literal
 from pydantic import BaseModel, Field
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langsmith import traceable
-from api.config import get_supervisor_llm
-
-SUPERVISOR_PROMPT = """You are the routing supervisor for Gordan Belfort, an elite financial AI system.
-
-Your ONLY job is to read the user's latest message and route it to the correct sub-agent.
-
-AVAILABLE AGENTS:
-1. "simulation" → Select when the user wants to:
-   - Run calculations, backtests, or simulations
-   - Generate charts, plots, or visualizations  
-   - Train ML models or run statistical analysis
-   - Execute Python code or custom computations
-   - Monte Carlo simulations, Markov chains, risk analysis
-   - Create diagrams or flowcharts
-
-2. "database" → Select when the user wants to:
-   - View portfolio holdings, positions, or P&L
-   - Check net worth, asset allocation
-   - Query market data, stock prices, or volumes
-   - Any data retrieval from the financial database
-
-3. "conversation" → Select when the user wants to:
-   - General chat, greetings, or casual questions
-   - Explanations of financial concepts
-   - Opinions or advice (no computation needed)
-   - Follow-up questions about previous responses
-
-ROUTING RULES:
-- If the request involves BOTH data and computation, route to "simulation" (it has database access too).
-- If uncertain, prefer "simulation" over "conversation" — better to use tools than to guess.
-- Always route to exactly ONE agent.
-
-Output your routing decision as structured JSON."""
+from api.config import get_supervisor_llm, load_prompt
+from api.graph.state import AgentState
 
 
-class RouteResponse(BaseModel):
-    """Supervisor routing decision."""
-    reasoning: str = Field(description="Brief reasoning for the routing decision (1-2 sentences)")
-    next: str = Field(description='The agent to route to: "simulation", "database", or "conversation"')
+class RouteDecision(BaseModel):
+    """The routing decision made by the Supervisor."""
+    reasoning: str = Field(
+        description="1-3 sentences explaining WHY you are routing to this agent."
+    )
+    next_agent: Literal["data_agent", "quant_agent", "judge_agent", "FINISH"] = Field(
+        description=(
+            "The agent to route to next. Options: "
+            "'data_agent' (fetch data), 'quant_agent' (analyze data), "
+            "'judge_agent' (risk review + alerts), 'FINISH' (done)."
+        )
+    )
+
+
+def _get_supervisor_prompt() -> str:
+    try:
+        return load_prompt("supervisor")
+    except Exception:
+        return """You are the Executive Supervisor routing between 3 agents.
+Route to data_agent if data is needed, quant_agent for analysis/modeling,
+judge_agent for risk review and Telegram alerts. Route to FINISH when fully done.
+IMPORTANT: Route to data_agent FIRST before any analysis. Do not loop the same agent twice."""
 
 
 @traceable(name="Supervisor Node")
-async def supervisor_node(state, config):
+async def supervisor_node(state: AgentState, config):
+    """Supervisor determines the next agent using strict structured outputs."""
     llm = get_supervisor_llm()
+    router_llm = llm.with_structured_output(RouteDecision)
 
-    try:
-        structured_llm = llm.with_structured_output(RouteResponse)
-    except Exception:
-        # Fallback if structured output isn't supported
-        structured_llm = None
+    system_prompt = _get_supervisor_prompt()
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", SUPERVISOR_PROMPT),
-        ("placeholder", "{messages}")
+        ("system", system_prompt),
+        MessagesPlaceholder(variable_name="messages"),
+        ("system", "Given the conversation above, decide which agent should act next. "
+                   "Provide reasoning and the exact next_agent string."),
     ])
 
-    if structured_llm:
-        chain = prompt | structured_llm
-        try:
-            response = await chain.ainvoke({"messages": state["messages"]}, config=config)
-            route = response.next if response.next in ("simulation", "database", "conversation") else "conversation"
-            return {
-                "next_agent": route,
-                "thinking_steps": [{
-                    "step": "routing_decision",
-                    "content": f"🧭 Routing: {response.reasoning} → **{route}**",
-                    "timestamp": __import__('time').time()
-                }]
-            }
-        except Exception:
-            import traceback
-            traceback.print_exc()
-            return {"next_agent": "conversation"}
-    else:
-        # Fallback: raw LLM with manual JSON parsing
-        chain = prompt | llm
-        try:
-            response = await chain.ainvoke({"messages": state["messages"]}, config=config)
-            content = response.content.lower()
-            if "simulation" in content:
-                route = "simulation"
-            elif "database" in content:
-                route = "database"
-            else:
-                route = "conversation"
-            return {"next_agent": route}
-        except Exception:
-            return {"next_agent": "conversation"}
+    chain = prompt | router_llm
+    decision = await chain.ainvoke({"messages": state["messages"]}, config=config)
+
+    now = time.time()
+    thinking_steps = [{
+        "step": "routing_decision",
+        "content": f"🧭 Routing to `{decision.next_agent}`: {decision.reasoning}",
+        "timestamp": now,
+    }]
+
+    return {
+        "next_agent": decision.next_agent,
+        "thinking_steps": thinking_steps,
+        "sender": "supervisor",
+    }

@@ -17,7 +17,10 @@ echo "Step 1: Downloading NSE JSON data..."
 # Run the python script from the virtual environment
 "$PROJECT_ROOT/ai/venv/bin/python" "$PROJECT_ROOT/scripts/ingestion/nse_downloader.py"
 
-echo "Step 2: Ingesting into PostgreSQL..."
+echo "Step 2: Ingesting into PostgreSQL (Bronze Layer)..."
 node "$PROJECT_ROOT/database/api/load_nse.js"
+
+echo "Step 3: Transforming JSON to Relational Tables & Tech Indicators (Silver/Gold Layer)..."
+node "$PROJECT_ROOT/database/api/parse_nse_json.js"
 
 echo "Pipeline completed successfully at $(date)!"

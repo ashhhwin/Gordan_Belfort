@@ -12,7 +12,9 @@ import {
   updateHolding,
   deleteHolding,
   getPortfolioHistory,
+  getMarketIndices,
   getSyncStatus,
+  triggerGlobalSync,
   getSyncLogs,
   getCronStatus,
 } from "../data/userManager";
@@ -70,12 +72,34 @@ export const useStore = create((set, get) => ({
   authError: null,
 
   // Initialize app state from Postgres
+  async runGlobalSync() {
+    try {
+      await triggerGlobalSync();
+      const syncStatus = await getSyncStatus();
+      set({ syncStatus });
+      toast.success("Global Sync Pipeline Triggered");
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to trigger sync pipeline");
+    }
+  },
+
+  async pollSyncStatus() {
+    try {
+      const syncStatus = await getSyncStatus();
+      set({ syncStatus });
+    } catch (e) {
+      console.error("Failed to poll sync status", e);
+    }
+  },
+
   async initApp() {
     try {
       const [
         users,
         family,
         history,
+        marketIndices,
         syncStatus,
         syncLogs,
         cronStatus,
@@ -85,6 +109,7 @@ export const useStore = create((set, get) => ({
         getUsers(),
         getFamily(),
         getPortfolioHistory(),
+        getMarketIndices().catch(() => []),
         getSyncStatus(),
         getSyncLogs(),
         getCronStatus(),
@@ -110,6 +135,7 @@ export const useStore = create((set, get) => ({
         family,
         currency: baseCurrency,
         history,
+        marketIndices,
         syncStatus,
         syncLogs,
         cronStatus,

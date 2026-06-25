@@ -14,11 +14,15 @@ import {
   Trash2,
 } from "lucide-react";
 import { Chart, registerables } from "chart.js";
-import { Doughnut } from "react-chartjs-2";
+import { Doughnut, Line } from "react-chartjs-2";
 import { useStore } from "../store";
 import HoldingsModal from "../components/portfolio/HoldingsModal";
+import HoldingsTable from "../components/portfolio/HoldingsTable";
 import NetWorthGrid from "../components/portfolio/NetWorthGrid";
 import { calculateTaxMetrics } from "../utils/taxCalc";
+import { calculateXIRR } from "../utils/mathCalc";
+import { fmtVal } from "../utils/formatters";
+import ChartModal from "../components/portfolio/ChartModal";
 
 Chart.register(...registerables);
 
@@ -27,16 +31,6 @@ function fmtINR(n) {
   if (Math.abs(n) >= 1e7) return `₹${(n / 1e7).toFixed(2)}Cr`;
   if (Math.abs(n) >= 1e5) return `₹${(n / 1e5).toFixed(2)}L`;
   return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-}
-
-function fmtUSD(n, rate) {
-  const v = n / rate;
-  if (Math.abs(v) >= 1e6) return `$${(v / 1e6).toFixed(2)}M`;
-  return `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-}
-
-function fmtVal(n, currency, rate) {
-  return currency === "INR" ? fmtINR(n) : fmtUSD(n, rate);
 }
 
 // ─── KPI Card ──────────────────────────────────────────────────────────────────
@@ -49,256 +43,68 @@ function KPICard({
   glowColor,
   iconBg,
   breakdown,
+  chartData,
+  onClick,
 }) {
   const isPos = delta >= 0;
-  return (
-    <div className="kpi-card">
-      <div className="kpi-card-glow" style={{ background: glowColor }} />
-      <div className="kpi-icon" style={{ background: iconBg }}>
-        <Icon size={18} color={glowColor} strokeWidth={2} />
-      </div>
-      <div className="kpi-label">{label}</div>
-      <div className="kpi-value">{value}</div>
-      <div className="kpi-sub">
-        <span className={`kpi-delta ${isPos ? "pos" : "neg"}`}>
-          {isPos ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
-          {Math.abs(delta).toFixed(2)}%
-        </span>
-        <span className="text-muted" style={{ fontSize: 11 }}>
-          {deltaLabel}
-        </span>
-      </div>
-      {breakdown && (
-        <div
-          style={{
-            marginTop: 12,
-            borderTop: "1px solid var(--border)",
-            paddingTop: 10,
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-          }}
-        >
-          {breakdown.map((b) => (
-            <div
-              key={b.name}
-              style={{ display: "flex", alignItems: "center", gap: 4 }}
-            >
-              <div
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: b.color,
-                }}
-              />
-              <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                {b.name}: {b.val}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Holdings Table ────────────────────────────────────────────────────────────
-function HoldingsTable({
-  holdings,
-  currency,
-  rate,
-  isFamilyMode,
-  config,
-  onEdit,
-  onDelete,
-}) {
-  const [sort, setSort] = useState({ key: "pnl", dir: -1 });
-
-  const rows = [...holdings]
-    .map((h) => {
-      const taxData = calculateTaxMetrics(h, config);
-      return {
-        ...h,
-        invested: h.avgBuy * h.qty,
-        currentVal: h.cmp * h.qty,
-        pnl: (h.cmp - h.avgBuy) * h.qty,
-        pnlPct: ((h.cmp - h.avgBuy) / h.avgBuy) * 100,
-        taxData,
-      };
-    })
-    .sort((a, b) => (a[sort.key] > b[sort.key] ? sort.dir : -sort.dir));
-
-  function toggleSort(key) {
-    setSort((s) => (s.key === key ? { key, dir: -s.dir } : { key, dir: -1 }));
-  }
-
-  const renderCol = (k, label, right = false) => {
-    return (
-      <th
-        key={k}
-        onClick={() => toggleSort(k)}
-        style={{ textAlign: right ? "right" : "left", cursor: "pointer" }}
-      >
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-          {label}
-          {sort.key !== k ? (
-            <ChevronUp size={11} style={{ opacity: 0.2 }} />
-          ) : sort.dir === 1 ? (
-            <ChevronUp size={11} />
-          ) : (
-            <ChevronDown size={11} />
-          )}
-        </span>
-      </th>
-    );
+  
+  const chartOpts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { enabled: false } },
+    scales: { x: { display: false }, y: { display: false } },
+    elements: { point: { radius: 0 }, line: { tension: 0.4, borderWidth: 2 } }
   };
 
+  // We use inline click to optionally show details later
   return (
-    <div className="card" style={{ padding: "20px 0" }}>
-      <div
-        className="card-header"
-        style={{ padding: "0 20px", marginBottom: 12 }}
-      >
-        <div className="card-title">
-          {isFamilyMode ? "Combined Family Holdings" : "Holdings"}
+    <div className="kpi-card-container" onClick={onClick} style={{ cursor: onClick ? "pointer" : "default" }}>
+      <div className="kpi-card-inner">
+        {/* Front */}
+        <div className="kpi-card-front kpi-card">
+          <div className="kpi-card-glow" style={{ background: glowColor }} />
+          <div className="kpi-icon" style={{ background: iconBg }}>
+            <Icon size={18} color={glowColor} strokeWidth={2} />
+          </div>
+          <div className="kpi-label">{label}</div>
+          <div className="kpi-value">{value}</div>
+          <div className="kpi-sub">
+            <span className={`kpi-delta ${isPos ? "pos" : "neg"}`}>
+              {isPos ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
+              {Math.abs(delta).toFixed(2)}%
+            </span>
+            <span className="text-muted" style={{ fontSize: 11 }}>
+              {deltaLabel}
+            </span>
+          </div>
         </div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-          {holdings.length} positions
+        
+        {/* Back */}
+        <div className="kpi-card-back">
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8, fontWeight: 500 }}>
+            {label} Details
+          </div>
+          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "center", position: 'relative' }}>
+            {chartData && chartData.datasets ? (
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+                <Line data={chartData} options={chartOpts} />
+              </div>
+            ) : breakdown ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: "auto" }}>
+                {breakdown.map((b) => (
+                  <div key={b.label || b.name} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: b.color }} />
+                    <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                      {b.label || b.name}: {b.value || b.val}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>No trend data</span>
+            )}
+          </div>
         </div>
-      </div>
-      <div className="holdings-table-wrap">
-        <table>
-          <thead>
-            <tr>
-              {renderCol("symbol", "Symbol")}
-              {isFamilyMode && <th>Owner</th>}
-              {renderCol("cmp", "CMP", true)}
-              {renderCol("qty", "Qty", true)}
-              {renderCol("invested", "Invested", true)}
-              {renderCol("currentVal", "Mkt Value", true)}
-              {renderCol("pnl", "P&L", true)}
-              {renderCol("pnlPct", "Return %", true)}
-              {renderCol("taxData.netProfit", "Net Post-Tax", true)}
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((h) => {
-              const pos = h.pnl >= 0;
-              return (
-                <tr key={h.id}>
-                  <td>
-                    <div className="td-symbol">{h.symbol}</div>
-                    <div className="td-company">{h.name}</div>
-                  </td>
-                  {isFamilyMode && (
-                    <td>
-                      <div className="owner-badge">
-                        <div
-                          className="owner-dot"
-                          style={{ background: h._user.color }}
-                        >
-                          {h._user.initials}
-                        </div>
-                        <span style={{ color: "var(--text-secondary)" }}>
-                          {h._user.name.split(" ")[0]}
-                        </span>
-                      </div>
-                    </td>
-                  )}
-                  <td style={{ textAlign: "right" }}>
-                    {currency === "INR"
-                      ? `₹${h.cmp.toLocaleString("en-IN")}`
-                      : `$${(h.cmp / rate).toFixed(2)}`}
-                    {h.dayChange !== undefined && (
-                      <div style={{ fontSize: 10.5, marginTop: 2 }}>
-                        <span
-                          style={{
-                            color:
-                              h.dayChange >= 0
-                                ? "var(--accent-green)"
-                                : "var(--accent-red)",
-                          }}
-                        >
-                          {h.dayChange >= 0 ? "+" : ""}
-                          {h.dayChangePct?.toFixed(2)}%
-                        </span>
-                      </div>
-                    )}
-                  </td>
-                  <td style={{ textAlign: "right" }}>{h.qty}</td>
-                  <td style={{ textAlign: "right" }}>
-                    {fmtVal(h.invested, currency, rate)}
-                  </td>
-                  <td style={{ textAlign: "right" }}>
-                    {fmtVal(h.currentVal, currency, rate)}
-                  </td>
-                  <td style={{ textAlign: "right" }}>
-                    <span className={`badge-gain ${pos ? "pos" : "neg"}`}>
-                      {pos ? "+" : ""}
-                      {fmtVal(h.pnl, currency, rate)}
-                    </span>
-                  </td>
-                  <td style={{ textAlign: "right" }}>
-                    <span
-                      style={{
-                        color: pos
-                          ? "var(--accent-green)"
-                          : "var(--accent-red)",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {pos ? "+" : ""}
-                      {h.pnlPct.toFixed(2)}%
-                    </span>
-                  </td>
-                  <td style={{ textAlign: "right" }}>
-                    <div
-                      style={{
-                        color:
-                          h.taxData.netProfit >= 0
-                            ? "var(--accent-green)"
-                            : "var(--accent-red)",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {h.taxData.netProfit >= 0 ? "+" : ""}
-                      {fmtVal(h.taxData.netProfit, currency, rate)}
-                    </div>
-                    <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                      {h.taxData.taxType} ({h.taxData.taxRate}%)
-                    </div>
-                  </td>
-                  <td>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 8,
-                        justifyContent: "center",
-                      }}
-                    >
-                      <button
-                        onClick={() => onEdit(h)}
-                        style={iconBtnStyle}
-                        title="Edit"
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                      <button
-                        onClick={() => onDelete(h.id)}
-                        style={{ ...iconBtnStyle, color: "var(--accent-red)" }}
-                        title="Delete"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
       </div>
     </div>
   );
@@ -463,6 +269,7 @@ export default function Portfolio() {
     history,
   } = useStore();
 
+  const [selectedChart, setSelectedChart] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingHolding, setEditingHolding] = useState(null);
   const [filters, setFilters] = useState({
@@ -474,6 +281,7 @@ export default function Portfolio() {
   const config = family?.config;
 
   const filteredHoldings = holdings.filter((h) => {
+    if (!isFamilyMode && h.user_id !== activeUser?.id) return false;
     if (
       isFamilyMode &&
       filters.userId !== "ALL" &&
@@ -501,14 +309,9 @@ export default function Portfolio() {
   const netWorth = totalAssets - totalLiabilities;
 
   // Traditional equity PNL (excluding non-tradables for these metrics)
-  const tradableHoldings = filteredHoldings.filter((h) =>
-    ["IND_EQUITY", "US_EQUITY", "MF", "CRYPTO"].includes(h.assetClass),
-  );
-  const otherHoldings = filteredHoldings.filter(
-    (h) =>
-      !["IND_EQUITY", "US_EQUITY", "MF", "CRYPTO"].includes(h.assetClass) &&
-      h.assetClass !== "CREDIT_CARD",
-  );
+  // The user wants ALL assets to be included in totalInvested/totalCurrent/dayGain!
+  const tradableHoldings = filteredHoldings.filter((h) => h.assetClass !== "CREDIT_CARD");
+  const otherHoldings = []; // Deprecated, all non-credit card assets are now tradableHoldings
   const liabilities = filteredHoldings.filter(
     (h) => h.assetClass === "CREDIT_CARD",
   );
@@ -520,43 +323,28 @@ export default function Portfolio() {
   const totalPnl = totalCurrent - totalInvested;
   const totalPnlPct = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
 
-  // Extract previous date from history to calculate true Day Gain
+  // Extract previous date from history to calculate true Day Gain safely without UTC timezone shift
   const safeHistory = Array.isArray(history) ? history : [];
   const uniqueDates = [
-    ...new Set(
-      safeHistory.map((h) => new Date(h.date).toISOString().split("T")[0]),
-    ),
+    ...new Set(safeHistory.map((h) => h.date.split("T")[0]))
   ].sort((a, b) => new Date(b) - new Date(a));
-  const todayStr = new Date().toISOString().split("T")[0];
-  const previousDateStr =
-    uniqueDates.find((d) => d < todayStr) || uniqueDates[0];
+  
+  // Use en-CA to force local YYYY-MM-DD format
+  const todayStr = new Date().toLocaleDateString('en-CA');
+  const previousDateStr = uniqueDates.find((d) => d < todayStr) || uniqueDates[0];
 
   let prevTotal = 0;
   let prevInvested = 0;
   if (previousDateStr) {
     const prevHistory = safeHistory.filter((row) => {
       if (!isFamilyMode && row.user_id !== activeUser?.id) return false;
-      if (
-        isFamilyMode &&
-        filters.userId !== "ALL" &&
-        row.user_id !== filters.userId
-      )
-        return false;
-      if (
-        filters.assetClass !== "ALL" &&
-        row.asset_class !== filters.assetClass
-      )
-        return false;
+      if (isFamilyMode && filters.userId !== "ALL" && row.user_id !== filters.userId) return false;
+      if (filters.assetClass !== "ALL" && row.asset_class !== filters.assetClass) return false;
+      if (row.asset_class === 'CREDIT_CARD') return false;
       return row.date.startsWith(previousDateStr);
     });
-    prevTotal = prevHistory.reduce(
-      (s, row) => s + parseFloat(row.total_value || 0),
-      0,
-    );
-    prevInvested = prevHistory.reduce(
-      (s, row) => s + parseFloat(row.invested_amount || 0),
-      0,
-    );
+    prevTotal = prevHistory.reduce((s, row) => s + parseFloat(row.total_value || 0), 0);
+    prevInvested = prevHistory.reduce((s, row) => s + parseFloat(row.invested_amount || 0), 0);
   }
 
   let dayGain = 0;
@@ -567,21 +355,16 @@ export default function Portfolio() {
     dayGainPct = (dayGain / prevTotal) * 100;
   }
 
-  const calculateXIRR = () => {
-    if (
-      !tradableHoldings ||
-      tradableHoldings.length === 0 ||
-      totalInvested <= 0
-    )
-      return 0;
-    const assumedHoldingPeriodYears = 1.5;
-    return (
-      (Math.pow(totalCurrent / totalInvested, 1 / assumedHoldingPeriodYears) -
-        1) *
-      100
-    );
-  };
-  const xirr = calculateXIRR();
+  // Real CAGR Calculation
+  let cagr = 0;
+  if (totalInvested > 0 && uniqueDates.length > 0) {
+     const firstDateStr = uniqueDates[uniqueDates.length - 1]; // sorted descending
+     const firstDate = new Date(firstDateStr);
+     const today = new Date();
+     // Ensure minimum 1 year so short periods don't scale up exponentially
+     const years = Math.max((today - firstDate) / (1000 * 60 * 60 * 24 * 365.25), 1.0);
+     cagr = (Math.pow(totalCurrent / totalInvested, 1 / years) - 1) * 100;
+  }
 
   // Value Breakdown for Net Worth Hover
   let valueBreakdown;
@@ -627,6 +410,61 @@ export default function Portfolio() {
       },
     ];
   }
+
+  // Generate Sparklines
+  const getTrendData = (metricAccessor, title, themeColor) => {
+      if (uniqueDates.length === 0) return null;
+      const ascDates = [...uniqueDates].sort((a,b) => new Date(a) - new Date(b));
+      
+      const fullDataPoints = ascDates.map(dateStr => {
+          const rows = safeHistory.filter(row => {
+              if (!isFamilyMode && row.user_id !== activeUser?.id) return false;
+              if (isFamilyMode && filters.userId !== "ALL" && row.user_id !== filters.userId) return false;
+              if (filters.assetClass !== "ALL" && row.asset_class !== filters.assetClass) return false;
+              return row.date.startsWith(dateStr);
+          });
+          return { date: dateStr, value: metricAccessor(rows) };
+      });
+      // Push today's live value to the end
+      fullDataPoints.push({ date: new Date().toLocaleDateString('en-CA'), value: metricAccessor(null, true) });
+      
+      // For the sparkline, only use the last 30 days
+      const sparklineData = fullDataPoints.slice(-30);
+      
+      return {
+          title,
+          themeColor,
+          rawData: fullDataPoints, // FULL history for the detailed modal
+          chartData: {             // 30-day subset for the tiny back-of-card graph
+              labels: sparklineData.map(d => d.date),
+              datasets: [{
+                  data: sparklineData.map(d => d.value),
+                  borderColor: 'rgba(255, 255, 255, 0.4)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  fill: true,
+              }]
+          }
+      }
+  }
+
+  const netWorthTrend = getTrendData((rows, isToday) => {
+      if (isToday) return netWorth;
+      const tAssets = rows.filter(r => r.asset_class !== 'CREDIT_CARD').reduce((s, r) => s + parseFloat(r.total_value || 0), 0);
+      const tLiab = rows.filter(r => r.asset_class === 'CREDIT_CARD').reduce((s, r) => s + parseFloat(r.total_value || 0), 0);
+      return tAssets - Math.abs(tLiab);
+  }, "Net Worth", "var(--accent-blue)");
+  
+  const liabilitiesTrend = getTrendData((rows, isToday) => {
+      if (isToday) return totalLiabilities;
+      return Math.abs(rows.filter(r => r.asset_class === 'CREDIT_CARD').reduce((s, r) => s + parseFloat(r.total_value || 0), 0));
+  }, "Liabilities", "var(--accent-amber)");
+  
+  const pnlTrend = getTrendData((rows, isToday) => {
+      if (isToday) return totalPnl;
+      const tInv = rows.filter(r => !['CREDIT_CARD'].includes(r.asset_class)).reduce((s, r) => s + parseFloat(r.invested_amount || 0), 0);
+      const tVal = rows.filter(r => !['CREDIT_CARD'].includes(r.asset_class)).reduce((s, r) => s + parseFloat(r.total_value || 0), 0);
+      return tVal - tInv;
+  }, "Total P&L", totalPnl >= 0 ? "var(--accent-purple)" : "var(--accent-red)");
 
   return (
     <div className="page-container">
@@ -701,25 +539,7 @@ export default function Portfolio() {
                 gap: 16,
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  color: "var(--text-muted)",
-                  fontSize: 12,
-                }}
-              >
-                <div
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: "50%",
-                    background: "var(--accent-green)",
-                  }}
-                />{" "}
-                Offline Mode
-              </div>
+
               {!isFamilyMode && (
                 <button
                   onClick={() => {
@@ -748,7 +568,7 @@ export default function Portfolio() {
         )}
 
         {/* KPI Row */}
-        <div className="kpi-grid" style={{ marginBottom: 24 }}>
+        <div className="kpi-grid" style={{ marginBottom: 24, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
           <KPICard
             icon={Wallet}
             label="Total Net Worth"
@@ -758,6 +578,19 @@ export default function Portfolio() {
             glowColor="var(--accent-blue)"
             iconBg="var(--accent-blue-dim)"
             breakdown={valueBreakdown}
+            chartData={netWorthTrend?.chartData}
+            onClick={() => netWorthTrend && setSelectedChart(netWorthTrend)}
+          />
+          <KPICard
+            icon={TrendingDown}
+            label="Liabilities"
+            value={fmtVal(totalLiabilities, currency, rate)}
+            delta={0}
+            deltaLabel="Total Debt"
+            glowColor="var(--accent-amber)"
+            iconBg="var(--accent-amber-dim)"
+            chartData={liabilitiesTrend?.chartData}
+            onClick={() => liabilitiesTrend && setSelectedChart(liabilitiesTrend)}
           />
           <KPICard
             icon={dayGain >= 0 ? TrendingUp : TrendingDown}
@@ -786,11 +619,13 @@ export default function Portfolio() {
                 ? "var(--accent-purple-dim)"
                 : "var(--accent-red-dim)"
             }
+            chartData={pnlTrend?.chartData}
+            onClick={() => pnlTrend && setSelectedChart(pnlTrend)}
           />
           <KPICard
             icon={Percent}
-            label="Est. XIRR"
-            value={`${xirr.toFixed(1)}%`}
+            label="Est. CAGR"
+            value={`${cagr.toFixed(1)}%`}
             delta={0}
             deltaLabel="Annualized"
             glowColor="var(--accent-gold)"
@@ -805,6 +640,43 @@ export default function Portfolio() {
         />
         <NetWorthChart filters={filters} />
 
+        {/* Advanced Analytics Grid */}
+        <h2
+          style={{
+            fontSize: "14px",
+            color: "var(--text-muted)",
+            marginBottom: "16px",
+            marginTop: "32px",
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+          }}
+        >
+          Portfolio Analytics
+        </h2>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: "20px",
+            marginBottom: "40px",
+          }}
+        >
+          <AssetAllocation holdings={filteredHoldings} />
+          <SectorDonut
+            holdings={filteredHoldings.filter((h) =>
+              ["IND_EQUITY", "US_EQUITY", "MF"].includes(h.assetClass),
+            )}
+          />
+          <PortfolioWeights holdings={filteredHoldings} />
+          <TopMovers
+            holdings={filteredHoldings}
+            currency={currency}
+            rate={rate}
+          />
+        </div>
+
+        
+        
         {/* ── Net Worth Grid ── */}
         <NetWorthGrid
           holdings={filteredHoldings}
@@ -812,6 +684,7 @@ export default function Portfolio() {
           rate={rate}
         />
 
+        
         {/* Holdings Table */}
         <HoldingsTable
           holdings={filteredHoldings}
@@ -833,40 +706,15 @@ export default function Portfolio() {
           editingHolding={editingHolding}
         />
 
-        {/* Advanced Analytics Grid */}
-        <h2
-          style={{
-            fontSize: "14px",
-            color: "var(--text-muted)",
-            marginBottom: "16px",
-            marginTop: "32px",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-          }}
-        >
-          Portfolio Analytics
-        </h2>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-            gap: "20px",
-            marginBottom: "40px",
-          }}
-        >
-          <AssetAllocation holdings={filteredHoldings} />
-          <SectorDonut
-            holdings={filteredHoldings.filter((h) =>
-              ["IND_EQUITY", "US_EQUITY", "MF"].includes(h.assetClass),
-            )}
-          />
-          <PortfolioWeights holdings={filteredHoldings} />
-          <TopMovers
-            holdings={filteredHoldings}
-            currency={currency}
-            rate={rate}
-          />
-        </div>
+        
+
+        {/* Selected Chart Details Modal */}
+        <ChartModal 
+          selectedChart={selectedChart} 
+          onClose={() => setSelectedChart(null)}
+          currency={currency}
+          rate={rate}
+        />
       </div>
     </div>
   );

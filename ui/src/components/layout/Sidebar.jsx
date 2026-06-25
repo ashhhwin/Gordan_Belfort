@@ -12,6 +12,7 @@ import {
   Settings as SettingsIcon,
   Sparkles,
   Database,
+  Network,
 } from "lucide-react";
 import { useStore } from "../../store";
 
@@ -25,6 +26,7 @@ const NAV = [
   { icon: Star, label: "Watchlist", to: "/watchlist" },
   { icon: Bell, label: "Alerts", to: "/alerts" },
   { icon: Newspaper, label: "News", to: "/news" },
+  { icon: Network, label: "Tracing", to: "/tracing" },
   { icon: Activity, label: "Sync Jobs", to: "/sync-jobs" },
   { icon: Database, label: "Database", to: "/database" },
   { icon: SettingsIcon, label: "Settings", to: "/settings" },

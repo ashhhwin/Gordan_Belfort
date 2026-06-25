@@ -186,7 +186,16 @@ def parse_csv(blob_name: str, cfg: dict) -> pl.DataFrame:
     existing = [c for c in cfg["ordered_cols"] if c in df.columns]
     df = df.select(existing)
 
-    df = df.unique(subset=["ticker", "api_run_date", "period", "frequency"], keep="last")
+    # 1. Keep only the latest api_run_date for each period
+    if "api_run_date" in df.columns:
+        df = df.sort("api_run_date").unique(subset=["ticker", "period", "frequency"], keep="last")
+    else:
+        df = df.unique(subset=["ticker", "period", "frequency"], keep="last")
+
+    # 2. Keep only 3 most recent quarterly and 2 most recent annual estimates
+    limit = 3 if cfg["frequency"] == "quarterly" else 2
+    df = df.sort("period", descending=True).group_by("ticker").head(limit)
+
     return df
 
 # =========================
@@ -200,7 +209,7 @@ def upsert_to_postgres(conn, df: pl.DataFrame, table: str):
     cur  = conn.cursor()
     cols = df.columns
 
-    conflict_keys = ["ticker", "api_run_date", "period", "frequency"]
+    conflict_keys = ["ticker", "period", "frequency"]
     update_cols   = [c for c in cols if c not in conflict_keys]
     update_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
 
@@ -216,7 +225,7 @@ def upsert_to_postgres(conn, df: pl.DataFrame, table: str):
     sql = f"""
         INSERT INTO {table} ({", ".join(cols)})
         VALUES %s
-        ON CONFLICT (ticker, api_run_date, period, frequency)
+        ON CONFLICT (ticker, period, frequency)
         DO UPDATE SET {update_clause}
     """
 
@@ -308,3 +317,5 @@ def run():
 # =========================
 if __name__ == "__main__":
     run()
+
+import sys; sys.exit(0)

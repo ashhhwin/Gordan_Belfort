@@ -1,11 +1,11 @@
-## Product Requirement Document (PRD)
+## Product Requirements Document (PRD)
 
 ### Document Control
 
-* **Project Name:** Gordan Belfort (Local-First Quantitative & Multi-Agent Intelligence Platform)
-* **Target Audience:** Quantitative Traders / Data Scientists (System-to-Agent and System-to-Human Interface)
-* **Architecture Strategy:** Local-first, Open-Source decoupled infrastructure designed for frictionless cloud migration.
-* **Status:** Draft / Baseline
+* **Project Name:** Gordan Belfort (Advanced Multi-Agent Quantitative Platform)
+* **Target Audience:** Quantitative Traders / Data Scientists 
+* **Architecture Strategy:** Local-first, Open-Source decoupled infrastructure designed for frictionless cloud migration. Strict adherence to Model Context Protocol (MCP) and Multi-Agent Cyclic Graphs.
+* **Status:** Final / Baseline v2.0
 
 ---
 
@@ -13,163 +13,136 @@
 
 ### 1.1 Core Value Proposition
 
-Gordan Belfort is a local-first, highly modular data ingestion and multi-agent intelligence platform. It orchestrates automated data pipelines, machine learning models, and LLM agents to aggregate financial, macroeconomic, and alternative data sources. The platform analyzes this data through advanced quantitative modeling, preserves long-term contextual insights using a persistent memory layer, and delivers high-conviction trading signals (Buy, Sell, Hold, Swing Strategies) with rigorous empirical proofs directly to a mobile device.
+Gordan Belfort is an institutional-grade, local-first multi-agent intelligence platform. It orchestrates complex, cyclical quantitative workflows via specialized agents. The system fetches market data, performs rigorous statistical backtesting, evaluates predictive machine learning models, and securely executes isolated python code for data manipulation. All tool executions are strictly abstracted via the Model Context Protocol (MCP). The platform ensures rigorous cross-examination of strategies via an LLM-as-a-Judge protocol prior to dispatching validated, high-conviction trading signals directly to mobile endpoints.
 
 ### 1.2 Deployment Evolution Strategy
 
-To minimize upfront overhead while preserving future scalability, the architecture maintains a strict separation of concerns via an abstraction layer (Dependency Injection and Environment Configuration).
+The architecture maintains absolute separation of concerns. Agents never execute logic directly; they delegate to isolated MCP servers.
 
 ```
 +-----------------------------------------------------------------------+
-|                           Core Application Logic                      |
+|                    LangGraph Multi-Agent Core                         |
 +-----------------------------------------------------------------------+
                                     |
             +-----------------------+-----------------------+
             |                                               |
             v                                               v
 +-----------------------+                       +-----------------------+
-|     Local Drivers     |                       |     Cloud Drivers     |
-| (SQLite/DuckDB, Ollama|                       |  (PostgreSQL, Bedrock/|
-|  /vLLM, Local Cron)   |                       |   OpenAI, AWS Lambda) |
+| Local MCP Servers     |                       | Cloud MCP Servers     |
+| (SQLite, Sandbox,     |                       | (PostgreSQL, Bedrock, |
+|  Local Backtest)      |                       |  AWS Lambda)          |
 +-----------------------+                       +-----------------------+
-
-```
-
-* **Phase 1 (Current):** 100% Local, open-source stack (Local DBs, self-hosted LLMs/MCPs, local orchestration, open-source notification gateways).
-* **Phase 2 (Target):** Cloud-native deployment (Managed databases, enterprise LLM APIs, serverless orchestration, enterprise push notification services) with **zero modifications to core business/agent logic**.
-
----
-
-## 2. System Architecture & High-Level Component Design
-
-The platform consists of five decoupled layers. Every boundary must be defined via interfaces/abstract classes to ensure the Phase 1 to Phase 2 transition requires only configuration toggles.
-
-```
-+-----------------------------------------------------------------------+
-| 1. Data Ingestion Layer (SEC, Reddit, News, Price Data, Alternative)  |
-+-----------------------------------------------------------------------+
-                                    |
-                                    v
-+-----------------------------------------------------------------------+
-| 2. Storage & Vector Engine (Local DuckDB/SQLite -> Cloud Postgres)     |
-+-----------------------------------------------------------------------+
-                                    |
-                                    v
-+-----------------------------------------------------------------------+
-| 3. Quantitative & Math Modeling Engine (Backtesting, Anomaly, Stats)  |
-+-----------------------------------------------------------------------+
-                                    |
-                                    v
-+-----------------------------------------------------------------------+
-| 4. Multi-Agent Orchestration Layer (LangGraph, MCP, Memory Palace)    |
-+-----------------------------------------------------------------------+
-                                    |
-                                    v
-+-----------------------------------------------------------------------+
-| 5. Output & Alerting Subsystem (Local NTFY/Gotify -> Firebase/APNS)   |
-+-----------------------------------------------------------------------+
-
 ```
 
 ---
 
-## 3. Functional Requirements
+## 2. System Architecture & Component Design
 
-### 3.1 Data Ingestion Engine (Multi-Source Pipeline)
+### 2.1 Multi-Agent Cyclic Graph Architecture
+The intelligence core is built on deterministic, cyclic agent workflows. 
 
-The system must concurrently poll, stream, or scrape historical and real-time data.
+* **Supervisor Agent (Heavy LLM):** Orchestrates the workflow. Delegates tasks to specialized agents using native structured tool-calling. Reviews responses and iterates cycles until the objective is resolved.
+* **Data Agent (Lightweight LLM, Temp=0.1):** Retrieves specific datasets via Market Data and Database MCPs. Ensures data cleanliness.
+* **Quantitative Agent (Heavy LLM):** Formulates hypotheses, writes Python code for the Sandbox MCP, trains ML models, and executes statistical and backtesting operations.
+* **Judge Agent (Heavy LLM):** The "Red Team" validator. Scrutinizes the Quant Agent's proofs, evaluates backtest confidence intervals, and seeks to falsify the hypothesis before allowing alert dispatch.
 
-* **Financial & Market Data:** OHLCV, options order flow, Greeks, and order book dynamics.
-* **Regulatory Filings:** SEC EDGAR real-time RSS feeds parsing 10-K, 10-Q, and Form 4 documents.
-* **Social & Sentiment Data:** Reddit (e.g., r/wallstreetbets, r/options) via API/scraping, tracking submission velocity and comment sentiment tickers.
-* **News & Macro Engines:** General, political, and financial news aggregators.
-* **Alternative Data:** Specialized unstructured datasets impacting market sentiment or supply chains.
-* **Abstraction Requirement:** All ingestors must output to a uniform schema standard (`RawIngestPayload`) before hitting the storage abstraction layer.
+### 2.2 Model Context Protocol (MCP) Ecosystem
+All tools are isolated into 5 specialized MCP servers, providing 50 atomic capabilities.
 
-### 3.2 Storage Layer & Hybrid Data Strategy
+#### I. Database MCP (Safe & Read-Only)
+Provides isolated access to relational financial state.
+1. `get_portfolio_holdings`: Retrieve active positions and weights.
+2. `get_historical_transactions`: Fetch execution history and tax lots.
+3. `get_net_worth_summary`: Aggregate total cross-broker account value.
+4. `run_readonly_sql`: Execute isolated SELECT queries.
+5. `get_asset_allocation`: Return macro asset class split.
+6. `get_dividend_history`: Query historical yield data.
+7. `get_realized_pnl`: Compute realized capital gains.
+8. `get_unrealized_pnl`: Compute current paper gains/losses.
+9. `get_cash_balances`: Check available deployable capital.
+10. `get_margin_utilization`: Monitor risk limits and margin usage.
 
-* **Structured/Relational Data:** Store time-series pricing data, metadata, and transaction states.
-* *Local (Phase 1):* DuckDB (optimized for analytical queries/OLAP) and SQLite (for transaction tracking/OLTP).
-* *Cloud (Phase 2):* PostgreSQL with TimescaleDB extension.
+#### II. Market Data & Sentiment MCP
+Fetches historical and real-time external data.
+11. `fetch_ohlcv`: Retrieve historical price bars.
+12. `fetch_order_book`: Retrieve L2 market depth.
+13. `fetch_options_chain`: Retrieve strikes, expiries, and Greeks.
+14. `query_news_database`: Search ingested financial news.
+15. `get_reddit_sentiment`: Aggregate social sentiment scores.
+16. `get_sec_filings`: Extract 10-K/10-Q text and numerical data.
+17. `get_corporate_actions`: Earnings dates and dividend ex-dates.
+18. `get_macro_indicators`: Fed rates, CPI, unemployment data.
+19. `get_insider_trading`: Form 4 buy/sell queries.
+20. `get_short_interest`: Query short volume percentages.
 
+#### III. Quant & Backtesting MCP
+Executes core mathematical and statistical models.
+21. `run_vector_backtest`: Fast Pandas-based vectorized backtesting.
+22. `run_event_backtest`: Granular tick-by-tick simulation.
+23. `calculate_var`: Compute Value at Risk metrics.
+24. `calculate_cvar`: Compute Conditional Value at Risk.
+25. `calculate_correlation_matrix`: Cross-asset correlation analysis.
+26. `calculate_rolling_volatility`: Time-series historical volatility tracking.
+27. `run_markov_regime_switch`: Detect probabilistic market regimes.
+28. `run_monte_carlo_sim`: Probabilistic price path generation.
+29. `calculate_black_scholes`: Option pricing modeling.
+30. `run_cointegration_test`: Pairs trading statistical test.
 
-* **Unstructured Data & Embeddings:** Vector storage for semantic search across news, filings, and social text.
-* *Local (Phase 1):* LanceDB or local ChromaDB instance.
-* *Cloud (Phase 2):* pgvector or Pinecone.
+#### IV. Sandbox & ML Execution MCP
+Provides secure runtime environments for arbitrary logic.
+31. `execute_python_code`: Run arbitrary data manipulation scripts.
+32. `train_linear_regression`: Baseline ML model training.
+33. `train_xgboost_model`: Tree-based classification for signals.
+34. `train_lstm_network`: Time-series deep learning training.
+35. `generate_candlestick_chart`: Output base64 chart images.
+36. `generate_correlation_heatmap`: Output visual correlation matrices.
+37. `generate_equity_curve`: Plot backtest performance.
+38. `generate_mermaid_flowchart`: System logic visualization.
+39. `run_hypothesis_test`: T-tests and Z-tests on quantitative signals.
+40. `optimize_portfolio_weights`: Mean-variance optimization algorithms.
 
-
-
-### 3.3 Quantitative & Mathematical Modeling Engine
-
-Before agents make decisions, quantitative guardrails must process raw numbers to prevent hallucinations.
-
-* **Statistical Modeling:** Compute rolling volatilities, correlation matrices, and statistical arbitrage indicators.
-* **Anomaly Detection:** Implement unsupervised algorithms (e.g., Local Outlier Factor, Histogram-based Outlier Score) to identify unusual options volume or erratic price deviations.
-* **Backtesting Engine:** Fast, vector-based or event-driven backtesting module to validate agent-generated swing trading strategies over rolling historical windows. Strategies must be scored against Sharpe ratio, Sortino ratio, and Maximum Drawdown.
-
-### 3.4 Multi-Agent Orchestration & Memory Layer
-
-The intelligence core is built on deterministic agent graphs utilizing Model Context Protocol (MCP) servers.
-
-* **Agent Architecture (LangGraph):** Implement stateful multi-agent workflows where nodes represent specialized agents (e.g., Data Miner Agent, Quantitative Math Agent, Strategy Evaluator Agent, Risk Manager Agent).
-* **Model Context Protocol (MCP):** Agents must interact with local files, execution environments, and internal DBs exclusively through standardized MCP tools. This isolates tool logic from LLM selection.
-* **LLM-as-a-Judge Evaluation:** High-conviction decisions must pass a strict cross-examination protocol. A specialized Judge Agent attempts to falsify the trade thesis using contradictory data points or statistical vulnerabilities before approval.
-* **Persistent Memory Layer (Memory Palace Pattern):** The system must maintain cross-day historical memory. This layer stores abstracted, structural insights (e.g., *"Ticker X shows sensitivity to regulatory changes mentioned on Day N"*), preventing information decay across graph execution cycles.
-
-### 3.5 Local-to-Cloud Alerting & Notification Gateway
-
-A cross-platform delivery pipeline optimized for low-latency transmission of signals.
-
-* **Local Execution:** Deliver alerts to mobile devices via lightweight, self-hosted, open-source notification daemons (`ntfy.sh` or Gotify). Calls are made via secure POST requests containing encrypted JSON payloads.
-* **Cloud Execution:** Switch target endpoint via configuration variables to Firebase Cloud Messaging (FCM) or Apple Push Notification service (APNs).
-* **Payload Requirements:** Alerts must provide high-density analytical structures: Ticker, Strategy Type (e.g., Momentum Swing), Action (Buy/Sell/Hold), Confidence Score, Target Entry/Exit, and a concise Markdown link detailing the model proofs.
-
----
-
-## 4. Technical Stack & Environment Configuration
-
-| Component | Phase 1 (Local / Open-Source) | Phase 2 (Cloud Migration Target) | Abstraction Mechanism |
-| --- | --- | --- | --- |
-| **Orchestration** | LangGraph (Python) | LangGraph (Python on AWS ECS/EKS) | Native Python Portability |
-| **Inference Engine** | vLLM / Ollama (Llama 3.1/3.3 / Qwen-2.5-Coder) | AWS Bedrock / OpenAI API | LangChain / LiteLLM Provider Wrapper |
-| **OLAP Storage** | DuckDB | Snowflake / AWS Redshift / TimescaleDB | SQLAlchemy / SQLGlot Abstraction |
-| **OLTP Storage** | SQLite | PostgreSQL | Alembic / SQLAlchemy ORM |
-| **Vector DB** | LanceDB / Local Chroma | pgvector / Pinecone | Vector Store Vector Interface |
-| **Tool Execution** | Local MCP Servers | Remote/Secure Containerized MCP | Standardized MCP Client Protocol |
-| **Notifications** | `ntfy.sh` / Gotify API | FCM / APNs / AWS SNS | Unified `NotificationProvider` Interface |
-
----
-
-## 5. System Interfaces & Data Flow
-
-```
-[Data Ingest] 
-      │ 
-      ▼
-[Storage Layer] ──(Triggers)──► [Quant Engine (Math/Backtest)]
-                                        │
-                                        ▼
-                               [LangGraph Agents] ◄──► [MCP Server Tools]
-                                        │
-                                        ├── [Memory Palace (Long-Term)]
-                                        ▼
-                           [LLM-as-a-Judge Evaluation]
-                                        │
-                                        ▼
-                            [Notification Gateway] ──► (Mobile Alert)
-
-```
-
-1. **Ingestion:** Ingestors populate raw tables inside the local abstraction layer.
-2. **Processing:** Quantitative engine computes statistical baselines and anomalies.
-3. **Agent Analysis:** LangGraph triggers the multi-agent system. The Quantitative Math agent pulls data via MCP, cross-references historical insights via Memory Palace, and scripts out a candidate swing strategy.
-4. **Backtest & Judge:** The strategy is executed by the backtester tool. Results are forwarded to the LLM Judge.
-5. **Dispatch:** If approved, a high-conviction decision is formatted and pushed to the mobile device via the operational notification wrapper.
+#### V. System & Memory MCP
+Manages state persistence, orchestration, and notifications.
+41. `save_to_memory`: Persist cross-day insights to vector database.
+42. `search_memory`: Retrieve historical convictions and strategies.
+43. `send_telegram_alert`: Push urgent, proof-backed notifications.
+44. `schedule_cron_job`: Automate repetitive daily/hourly tasks.
+45. `log_system_trace`: Save graph execution path and UI logs.
+46. `get_system_health`: Check MCP service status and latency.
+47. `clear_agent_cache`: Reset state across the LangGraph instance.
+48. `generate_tax_optimization_report`: Harvest loss recommendations.
+49. `generate_rebalancing_options`: Suggestions to revert to target allocations.
+50. `flag_risky_bets`: Alert on high-volatility outlier positions.
 
 ---
 
-## 6. Non-Functional Requirements & Guardrails
+## 3. Core Functional Workflows
 
-* **Production-Ready Logic:** The implementation must completely reject placeholder data structures, mock data files, or hard-coded logic paths.
-* **Config-Driven Architecture:** All environment switches (DB connections, LLM base URLs, API keys, Notification targets) must be handled exclusively via an externalized `.env` or YAML configuration matrix.
-* **Deterministic Fallbacks:** If local inference engine context windows are exceeded or failures occur during multi-day evaluations, state boundaries must safely roll back to the last stable check-pointed state in the relational database.
+### 3.1 Automated Pipeline (Data -> Alert)
+The system operates autonomously via scheduled cron triggers:
+1. **Ingestion**: The Data Agent utilizes the Market Data MCP to pull news, sentiment, and OHLCV data.
+2. **Analysis**: The Quant Agent utilizes the Sandbox MCP and Quant MCP to process the data, formulate a hypothesis, and conduct rigorous statistical testing. 
+3. **Validation**: The Judge Agent reviews the hypothesis, ensuring empirical proof exists and maximum drawdown constraints are respected.
+4. **Action**: Upon validation, the System MCP pushes an alert via Telegram containing conviction scores, supporting charts, and the validated thesis.
+
+### 3.2 Output & Tracing Constraints
+- **Language**: Agent interactions and prompts must employ strictly formal, professional language. Extraneous phrasing ("fluff") and emojis are prohibited.
+- **Tracing**: Every tool payload, thought process, and intermediate state must be traced and exposed natively in the user interface. Visualizations (charts, flowcharts) and sandbox execution logs must render perfectly within the trace UI.
+- **Deterministic Action**: LLM temperatures for data and execution routing must be strictly constrained (temp=0.1) to ensure consistent structured tool calling.
+
+---
+
+## 4. Technical Stack
+
+| Component | Phase 1 (Local / Open-Source) | Phase 2 (Cloud Migration Target) |
+| --- | --- | --- |
+| **Orchestration** | LangGraph (Python) | LangGraph (Python on AWS) |
+| **Inference** | Local (Ollama/vLLM) | Managed (AWS Bedrock / OpenAI API) |
+| **Tool Execution** | Local Node/Python MCP Servers | Containerized Remote MCPs |
+| **Database** | SQLite & DuckDB | PostgreSQL & TimescaleDB |
+| **Memory** | Local Vector DB | pgvector / Pinecone |
+| **Notifications** | Telegram Bot API / ntfy | FCM / Enterprise SMS APIs |
+
+## 5. Non-Functional Requirements
+- **No Direct Logic in Agents**: Agents contain zero business logic. All logic is encapsulated in MCP servers.
+- **Fail-Safe Fallbacks**: Multi-agent cycles must have strict iteration limits to prevent infinite reasoning loops.

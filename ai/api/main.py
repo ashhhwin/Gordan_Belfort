@@ -11,18 +11,26 @@ import json
 import uuid
 import time
 import sqlite3
+import warnings
+import re
 from typing import Optional
+
+# Suppress LangGraph deprecation warnings from polluting logs
+warnings.filterwarnings("ignore", category=UserWarning, module="langgraph")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from api.graph.main_graph import build_app_graph
 from api.config import (
-    CONVERSATIONS_DB_PATH, CHECKPOINT_DB_PATH, LLM_MODEL, PERSONAS, DEFAULT_PERSONA,
-    LLM_BASE_URL,
+    CONVERSATIONS_DB_PATH, CHECKPOINT_DB_PATH, LLM_MODEL,
+    LLM_BASE_URL, LLM_PROVIDER,
 )
 from langchain_core.messages import HumanMessage
 
 from dotenv import load_dotenv
 load_dotenv()
+
+DEFAULT_PERSONA = "gordan_belfort"
 
 app = FastAPI(title="Gordan Belfort AI Brain", version="2.0.0")
 
@@ -78,6 +86,28 @@ class ConversationCreate(BaseModel):
 class ConversationUpdate(BaseModel):
     title: Optional[str] = None
     is_pinned: Optional[bool] = None
+
+
+# ── Utilities ──
+
+def clean_agent_output(text: str) -> str:
+    """Regex safety net to prevent internal reasoning/headers from leaking."""
+    if not text:
+        return ""
+    # 1. Remove JSON routing blocks {"reasoning":...}
+    text = re.sub(r'\{[^{}]*"next_agent"[^{}]*\}', '', text, flags=re.DOTALL)
+    text = re.sub(r'\{[^{}]*"reasoning"[^{}]*\}', '', text, flags=re.DOTALL)
+    # 2. Remove <think> blocks
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    # 3. Remove internal agent headers
+    internal_headers = [
+        r'#{1,3}\s*(Data Retrieved|Quantitative Analysis|Hypothesis|Results|Conclusion|Recommendation)',
+    ]
+    for pattern in internal_headers:
+        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+    # 4. Collapse multiple blank lines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 
 # ── SSE Event Generator ──
@@ -158,11 +188,18 @@ async def event_generator(message: str, session_id: str, persona: str = None, mo
                     preview = str(output)[:300] if not has_image else "(Chart generated)"
                     yield f"data: {json.dumps({'type': 'tool_end', 'tool_name': tool_name, 'result_preview': preview, 'has_image': has_image})}\n\n"
 
+                # ── Model fallback detection ──
+                elif kind == "on_chat_model_start":
+                    invocation_params = event.get("data", {}).get("invocation_params", {})
+                    model_name = invocation_params.get("model", "")
+                    if LLM_PROVIDER == "openrouter" and ("qwen" in model_name.lower() or "ollama" in str(invocation_params).lower()):
+                        yield f"data: {json.dumps({'type': 'fallback', 'content': f'⚠ API failed. Falling back to local Ollama ({model_name}).'})}\n\n"
+
                 # ── LLM token streaming ──
                 elif kind == "on_chat_model_stream":
                     node_name = event.get("metadata", {}).get("langgraph_node", "")
-                    # Don't stream thinking node tokens — those are internal reasoning
-                    if node_name not in ("thinking", "memory_retrieve", "memory_write", ""):
+                    # ONLY STREAM THE PRESENTER AGENT
+                    if node_name == "presenter_agent":
                         chunk = event["data"]["chunk"]
                         if chunk.content:
                             yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
@@ -240,7 +277,8 @@ async def chat_sync(req: ChatRequest):
             conn.commit()
             conn.close()
             
-            final_message = result["messages"][-1].content
+            raw_message = result["messages"][-1].content
+            final_message = clean_agent_output(raw_message)
             
             thinking_text = ""
             if "thinking_steps" in result and result["thinking_steps"]:
@@ -383,14 +421,28 @@ async def list_models():
 
 @app.get("/personas")
 async def list_personas():
-    """List available AI personas."""
-    return {
-        "personas": [
-            {"key": k, "name": v["name"], "description": v["description"]}
-            for k, v in PERSONAS.items()
-        ],
-        "default": DEFAULT_PERSONA
-    }
+    """Backward-compat stub — personas are deprecated. Returns empty list."""
+    return {"personas": [], "default": "gordan_belfort"}
+
+
+@app.post("/pulse/trigger")
+async def trigger_pulse(dry_run: bool = False):
+    """
+    Manually trigger an AI Pulse scan.
+    dry_run=true: runs analysis but does NOT send Telegram.
+    """
+    import asyncio
+    from pulse.pulse_runner import run_pulse_once
+
+    async def do_pulse():
+        return await run_pulse_once(dry_run=dry_run)
+
+    try:
+        result = await do_pulse()
+        return {"status": "completed", "dry_run": dry_run, "output_preview": result[:500] if result else ""}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.get("/health")
@@ -428,12 +480,19 @@ async def health_check():
     except Exception:
         pass
 
+    from api.config import AGENT_MODELS_OPENROUTER
+
+    reported_model = LLM_MODEL
+    if LLM_PROVIDER == "openrouter":
+        reported_model = AGENT_MODELS_OPENROUTER.get("default", LLM_MODEL)
+
     return {
         "status": "healthy",
         "service": "gordan-belfort-ai",
         "version": "2.0.0",
-        "model": LLM_MODEL,
+        "model": reported_model,
+        "provider": LLM_PROVIDER,
+        "llm_base_url": LLM_BASE_URL,
         "ollama_status": ollama_status,
-        "memory_count": memory_count,
         "conversation_count": convo_count,
     }

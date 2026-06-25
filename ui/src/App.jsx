@@ -18,6 +18,7 @@ import Settings from "./pages/Settings";
 import Assistant from "./pages/Assistant";
 import SyncJobs from "./pages/SyncJobs";
 import DatabaseExplorer from "./pages/DatabaseExplorer";
+import Tracing from "./pages/Tracing";
 
 function AppShell() {
   return (
@@ -37,6 +38,7 @@ function AppShell() {
           <Route path="/assistant" element={<Assistant />} />
           <Route path="/sync-jobs" element={<SyncJobs />} />
           <Route path="/database" element={<DatabaseExplorer />} />
+          <Route path="/tracing" element={<Tracing />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </div>

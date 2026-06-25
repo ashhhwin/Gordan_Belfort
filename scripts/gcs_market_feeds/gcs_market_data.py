@@ -151,14 +151,36 @@ def copy_to_postgres(df: pl.DataFrame):
     buf.seek(0)
 
     cols = ", ".join(df.columns)
+    
+    # 1. Create temp table
+    cursor.execute(f"CREATE TEMP TABLE IF NOT EXISTS tmp_market_data (LIKE market.market_data INCLUDING DEFAULTS) ON COMMIT DROP;")
+    
+    # 2. Copy into temp table
     cursor.copy_expert(
-        f"""
-        COPY market.market_data ({cols})
-        FROM STDIN
-        WITH CSV HEADER
-        """,
+        f"COPY tmp_market_data ({cols}) FROM STDIN WITH CSV HEADER",
         buf
     )
+    
+    # 3. Upsert from temp table
+    update_cols = ", ".join([f"{c} = EXCLUDED.{c}" for c in df.columns if c not in ('trade_date', 'symbol')])
+    
+    if update_cols:
+        cursor.execute(f"""
+            INSERT INTO market.market_data ({cols})
+            SELECT {cols} FROM tmp_market_data
+            ON CONFLICT (symbol, trade_date) 
+            DO UPDATE SET {update_cols}
+        """)
+    else:
+        cursor.execute(f"""
+            INSERT INTO market.market_data ({cols})
+            SELECT {cols} FROM tmp_market_data
+            ON CONFLICT (symbol, trade_date) DO NOTHING
+        """)
+        
+    # 4. Clean up temp table
+    cursor.execute("DROP TABLE tmp_market_data;")
+    
     conn.commit()
 
 def mark_processed(file_name: str):
@@ -214,3 +236,5 @@ import gc
 if __name__ == "__main__":
     run()
     gc.collect()
+
+import sys; sys.exit(0)

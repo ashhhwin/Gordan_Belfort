@@ -73,8 +73,18 @@ export async function getPortfolioHistory() {
   return data;
 }
 
+export async function getMarketIndices() {
+  const { data } = await axios.get(`${API_BASE}/market/indices`);
+  return data;
+}
+
 export async function getSyncStatus() {
   const { data } = await axios.get(`${API_BASE}/sync-status`);
+  return data;
+}
+
+export async function triggerGlobalSync() {
+  const { data } = await axios.post(`${API_BASE}/sync-all`);
   return data;
 }
 

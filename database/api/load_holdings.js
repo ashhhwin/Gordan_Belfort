@@ -13,16 +13,18 @@ const __dirname = path.dirname(__filename);
 const HOLDING_NAMESPACE = '1b671a64-40d5-491e-99b0-da01ff1f3341';
 
 const ASSET_CLASS_MAP = {
-  'Mutual Fund': 'MF',
-  'US Stock': 'US_EQUITY',
-  'Stock': 'IND_EQUITY',
-  'Debt': 'BONDS',
-  'Fixed Deposit': 'BONDS',
-  'Savings Account': 'BANK',
-  'NPS': 'NPS',
-  'EPF': 'EPF',
-  'PPF': 'PPF',
-  'Credit Card': 'CREDIT_CARD'
+  'mutual fund': 'MF',
+  'us stock': 'US_EQUITY',
+  'stock': 'IND_EQUITY',
+  'debt': 'BONDS',
+  'fixed deposit': 'FD',
+  'savings account': 'BANK',
+  'nps': 'NPS',
+  'epf': 'EPF',
+  'ppf': 'PPF',
+  'credit card': 'CREDIT_CARD',
+  'real estate': 'REAL_ESTATE',
+  'oi': 'OTHER'
 };
 
 async function main() {
@@ -82,7 +84,7 @@ async function main() {
       // 4. Upsert holdings
       for (const row of data) {
         const assetTypeRaw = row['Asset Type'] || 'Stock';
-        const assetClass = ASSET_CLASS_MAP[assetTypeRaw] || 'IND_EQUITY';
+        const assetClass = ASSET_CLASS_MAP[assetTypeRaw.toLowerCase()] || 'OTHER';
         const symbol = row['Investment'] || 'UNKNOWN';
         const name = row['Name'] || symbol; // 'Name' column in excel is user name, Investment is the stock name
         const sector = row['Category'] || null;

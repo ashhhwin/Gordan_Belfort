@@ -76,78 +76,101 @@ function fmtVal(n, currency, rate) {
   }
 }
 
-function CategoryCard({ category, total, currency, rate, isLiability }) {
+function CategoryCard({ category, total, holdings, currency, rate, isLiability, onClick }) {
   if (total === 0) return null; // Don't show empty buckets
 
   const Icon = category.icon;
+  const isPos = !isLiability;
+
+  // Find top 3 holdings in this category
+  const catHoldings = holdings
+    .filter(h => h.assetClass === category.id)
+    .sort((a, b) => ((b.cmp || b.avgBuy) * b.qty) - ((a.cmp || a.avgBuy) * a.qty))
+    .slice(0, 3);
 
   return (
     <div
-      style={{
-        background: "var(--surface-2)",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius-lg)",
-        padding: "20px",
-        display: "flex",
-        flexDirection: "column",
-        gap: "12px",
-        transition: "var(--transition)",
-        cursor: "default",
-        position: "relative",
-        overflow: "hidden",
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = category.color;
-        e.currentTarget.style.transform = "translateY(-2px)";
-        e.currentTarget.style.boxShadow = `0 8px 24px -8px ${category.color}40`;
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = "var(--border)";
-        e.currentTarget.style.transform = "none";
-        e.currentTarget.style.boxShadow = "none";
-      }}
+      className="kpi-card-container"
+      onClick={() => onClick && onClick(category.id)}
+      style={{ cursor: onClick ? "pointer" : "default", height: "160px" }}
     >
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: "4px",
-          height: "100%",
-          background: category.color,
-          opacity: 0.8,
-        }}
-      />
+      <div className="kpi-card-inner">
+        {/* FRONT */}
+        <div 
+          className="kpi-card-front kpi-card" 
+          style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "12px", border: "1px solid var(--border)" }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "4px",
+              height: "100%",
+              background: category.color,
+              opacity: 0.8,
+            }}
+          />
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              color: "var(--text-secondary)",
+            }}
+          >
+            <div style={{ background: `${category.color}15`, padding: "6px", borderRadius: "8px", display: "flex" }}>
+              <Icon size={16} color={category.color} />
+            </div>
+            <span style={{ fontSize: "13px", fontWeight: 500 }}>
+              {category.label}
+            </span>
+          </div>
+          <div
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "22px",
+              fontWeight: 700,
+              color: isLiability ? "var(--accent-red)" : "var(--text-primary)",
+              marginTop: "auto",
+              marginBottom: "4px"
+            }}
+          >
+            {fmtVal(total, currency, rate)}
+          </div>
+        </div>
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          color: "var(--text-secondary)",
-        }}
-      >
-        <Icon size={16} color={category.color} />
-        <span style={{ fontSize: "13px", fontWeight: 500 }}>
-          {category.label}
-        </span>
-      </div>
-
-      <div
-        style={{
-          fontFamily: "var(--font-sans)",
-          fontSize: "24px",
-          fontWeight: 700,
-          color: isLiability ? "var(--accent-red)" : "var(--text-primary)",
-        }}
-      >
-        {fmtVal(total, currency, rate)}
+        {/* BACK */}
+        <div className="kpi-card-back" style={{ padding: "16px", border: `1px solid ${category.color}40`, background: "var(--surface-2)" }}>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Top Holdings
+          </div>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6, overflowY: "auto" }}>
+            {catHoldings.length > 0 ? catHoldings.map((h, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
+                <span style={{ color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "60%" }}>
+                  {h.symbol || h.name}
+                </span>
+                <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
+                  {fmtVal((h.cmp || h.avgBuy) * h.qty, currency, rate)}
+                </span>
+              </div>
+            )) : (
+              <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                No active positions
+              </div>
+            )}
+          </div>
+          <div style={{ fontSize: 10, color: category.color, marginTop: "auto", textAlign: "right", opacity: 0.8 }}>
+            Click to view all &rarr;
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-export default function NetWorthGrid({ holdings, currency, rate }) {
+export default function NetWorthGrid({ holdings, currency, rate, onAssetClick }) {
   // Aggregate totals
   const totals = {};
 
@@ -183,8 +206,10 @@ export default function NetWorthGrid({ holdings, currency, rate }) {
             key={cat.id}
             category={cat}
             total={totals[cat.id] || 0}
+            holdings={holdings}
             currency={currency}
             rate={rate}
+            onClick={onAssetClick}
           />
         ))}
       </div>
@@ -215,9 +240,11 @@ export default function NetWorthGrid({ holdings, currency, rate }) {
                 key={cat.id}
                 category={cat}
                 total={totals[cat.id] || 0}
+                holdings={holdings}
                 currency={currency}
                 rate={rate}
                 isLiability
+                onClick={onAssetClick}
               />
             ))}
           </div>

@@ -77,6 +77,9 @@ export default function SyncJobs() {
       } else if (jobName === "GCS Earnings Calendar") {
         const res = await axios.post(`${API_BASE}/gcs-earnings-run`);
         msg = res.data.message || msg;
+      } else if (jobName === "IBKR Portfolio Sync") {
+        const res = await axios.post(`${API_BASE}/ibkr-sync-run`);
+        msg = res.data.message || msg;
       } else {
         await runSyncJob();
       }
@@ -110,7 +113,6 @@ export default function SyncJobs() {
       style={{
         display: "flex",
         flexDirection: "column",
-        height: "100%",
         gap: "24px",
       }}
     >
@@ -339,7 +341,7 @@ export default function SyncJobs() {
           flex: 1,
           display: "flex",
           flexDirection: "column",
-          minHeight: 0,
+          minHeight: "500px",
         }}
       >
         <div
@@ -370,7 +372,7 @@ export default function SyncJobs() {
           </span>
         </div>
 
-        <div style={{ flex: 1, overflow: "auto" }}>
+        <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
           <table
             className="holdings-table"
             style={{ width: "100%", borderCollapse: "collapse" }}
@@ -622,6 +624,7 @@ export default function SyncJobs() {
               maxHeight: "85vh",
               display: "flex",
               flexDirection: "column",
+              overflow: "hidden",
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -661,7 +664,7 @@ export default function SyncJobs() {
                 <X size={24} />
               </button>
             </div>
-            <div style={{ padding: "24px", overflow: "auto", flex: 1 }}>
+            <div style={{ padding: "24px", overflow: "auto", flex: 1, minHeight: 0 }}>
               <div
                 style={{ display: "flex", gap: "24px", marginBottom: "24px" }}
               >

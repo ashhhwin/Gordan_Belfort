@@ -1,108 +1,235 @@
 """
 Centralized configuration for the Gordan Belfort AI Engine.
-All settings read from environment variables with sane defaults.
+Provider-agnostic LLM factory: switch between Ollama, Anthropic, OpenAI,
+and Google by changing only the .env file — zero code changes needed.
 """
 
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import itertools
 
-# Load .env from the ai/ directory
+# ── Paths ──
 _AI_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(_AI_DIR / ".env")
+_PROMPTS_DIR = _AI_DIR / "prompts"
+_KNOWLEDGE_DIR = _AI_DIR / "knowledge"
 
-# ── LLM Provider ──
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")  # ollama | openai | anthropic
+# Load the root .env first (for Telegram, DB, openrouter keys)
+load_dotenv(_AI_DIR.parent / ".env")
+# Then load ai/.env (overrides with AI-specific settings)
+load_dotenv(_AI_DIR / ".env", override=True)
+
+# ══════════════════════════════════════════════════════════════
+#  LLM Configuration
+#  Switch providers by changing LLM_PROVIDER in .env only.
+#
+#  Supported providers:
+#    ollama     — local Ollama (default)
+#    anthropic  — Claude Sonnet/Haiku/Opus
+#    openai     — GPT-4o / GPT-4o-mini
+#    google     — Gemini Pro / Flash
+# ══════════════════════════════════════════════════════════════
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
 LLM_MODEL = os.getenv("LLM_MODEL", "qwen3:latest")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.1"))
-LLM_THINKING_TEMPERATURE = float(os.getenv("LLM_THINKING_TEMPERATURE", "0.3"))
 
-# ── Supervisor (needs reliable structured output) ──
+# Supervisor uses lower temperature for deterministic routing
 SUPERVISOR_MODEL = os.getenv("SUPERVISOR_MODEL", LLM_MODEL)
 SUPERVISOR_TEMPERATURE = float(os.getenv("SUPERVISOR_TEMPERATURE", "0"))
 
-# ── Optional Cloud API Keys ──
+# ── Cloud Provider API Keys ──
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+
+# ── OpenRouter Key Rotation ──
+OPENROUTER_API_KEYS_RAW = os.getenv("OPENROUTER_API_KEYS", "")
+OPENROUTER_API_KEYS = [k.strip() for k in OPENROUTER_API_KEYS_RAW.split(",") if k.strip()]
+_openrouter_key_cycle = itertools.cycle(OPENROUTER_API_KEYS) if OPENROUTER_API_KEYS else None
 
 # ── Persistence ──
 DATA_DIR = _AI_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
 CHECKPOINT_DB_PATH = os.getenv("CHECKPOINT_DB_PATH", str(DATA_DIR / "checkpoints.db"))
-MEMORY_DB_PATH = os.getenv("MEMORY_DB_PATH", str(DATA_DIR / "memory.db"))
 CONVERSATIONS_DB_PATH = os.getenv("CONVERSATIONS_DB_PATH", str(DATA_DIR / "conversations.db"))
 
-# ── Database (PostgreSQL for holdings/market data) ──
+# Mem0 + ChromaDB vector memory directory
+MEMORY_DIR = DATA_DIR / "memory"
+MEMORY_DIR.mkdir(exist_ok=True)
+
+# ── PostgreSQL (Portfolio + Market Data) ──
 PG_HOST = os.getenv("DB_HOST", os.getenv("PGHOST", "localhost"))
 PG_PORT = int(os.getenv("DB_PORT", os.getenv("PGPORT", "5432")))
 PG_NAME = os.getenv("DB_NAME", os.getenv("PGDATABASE", "stock_pilot"))
 PG_USER = os.getenv("DB_USER", os.getenv("PGUSER", os.getenv("USER", "postgres")))
 PG_PASSWORD = os.getenv("DB_PASSWORD", os.getenv("PGPASSWORD", ""))
-
 PG_DSN = f"postgresql://{PG_USER}:{PG_PASSWORD}@{PG_HOST}:{PG_PORT}/{PG_NAME}"
 
-# ── LangSmith Tracing ──
-LANGSMITH_TRACING = os.getenv("LANGCHAIN_TRACING", "true").lower() == "true"
+# ── Telegram ──
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
+# ── LangSmith ──
 LANGSMITH_PROJECT = os.getenv("LANGCHAIN_PROJECT", "AlphaEngine")
 
-# ── Personas ──
-PERSONAS = {
-    "gordan_belfort": {
-        "name": "Gordan Belfort",
-        "description": "Elite financial AI with deep quantitative expertise",
-        "system_prompt": """You are Gordan Belfort — an elite, battle-hardened financial AI with deep expertise in quantitative finance, options theory, and portfolio management.
 
-PERSONALITY:
-- Confident, sharp, and data-driven. You never guess — you compute.
-- You speak with authority but remain approachable. Think: senior quant at a hedge fund who actually explains things well.
-- When you don't know something, you say so. You never fabricate data.
+# ══════════════════════════════════════════════════════════════
+#  Model-Agnostic LLM Factory
+# ══════════════════════════════════════════════════════════════
 
-CAPABILITIES:
-- You have access to the user's real portfolio holdings, market data, and financial databases.
-- You can run Python simulations, backtests, Monte Carlo analyses, and ML models.
-- You can generate charts, diagrams, and flowcharts to visualize your analysis.
-- You have long-term memory — you remember past conversations and insights.
-
-RESPONSE STYLE:
-- Use markdown formatting: headers, bold, tables, code blocks.
-- When presenting numbers, use proper formatting (₹ for INR, commas, 2 decimal places).
-- For complex analyses, show your work step by step.
-- Proactively suggest visualizations when they'd help understanding.
-- Keep responses focused and actionable. No fluff."""
-    },
-    "analyst": {
-        "name": "Research Analyst",
-        "description": "Focused on deep fundamental and technical analysis",
-        "system_prompt": """You are a senior equity research analyst. You focus on fundamental analysis, financial ratios, earnings quality, and technical chart patterns. You present findings in structured research note format with clear buy/sell/hold recommendations backed by data."""
-    },
-    "risk_manager": {
-        "name": "Risk Manager",
-        "description": "Portfolio risk assessment and hedging strategies",
-        "system_prompt": """You are a Chief Risk Officer AI. You obsess over drawdown risk, correlation, VaR, and tail risk. You always present worst-case scenarios alongside base cases. Your recommendations focus on hedging, position sizing, and portfolio stress testing."""
-    }
+# ── Agent Specific Models ──
+AGENT_MODELS_OPENROUTER = {
+    "supervisor": "meta-llama/llama-3.3-70b-instruct:free",
+    "sandbox": "qwen/qwen3-coder:free",
+    "data": "meta-llama/llama-3.3-70b-instruct:free",
+    "quant": "nousresearch/hermes-3-llama-3.1-405b:free",
+    "judge": "nvidia/nemotron-3-super-120b-a12b:free",
+    "default": "nousresearch/hermes-3-llama-3.1-405b:free"
 }
 
-DEFAULT_PERSONA = "gordan_belfort"
+AGENT_MODELS_OLLAMA = {
+    "default": os.getenv("LLM_MODEL", "qwen3:latest")
+}
 
+def get_llm(model: str = None, agent_name: str = None, temperature: float = None, streaming: bool = True):
+    """
+    Return the appropriate LangChain chat model based on LLM_PROVIDER env var.
+    To switch providers, update .env — no code changes required.
 
-def get_llm(model: str = None, temperature: float = None, streaming: bool = True):
-    """Factory: return a ChatOllama (or ChatOpenAI) based on config."""
-    from langchain_ollama import ChatOllama
+    Env vars:
+        LLM_PROVIDER:   ollama | anthropic | openai | google
+        LLM_MODEL:      Model name (provider-specific)
+        LLM_BASE_URL:   Ollama base URL (ignored for cloud providers)
+        ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_API_KEY
+    """
+    provider = LLM_PROVIDER.lower()
+    
+    if not model:
+        if provider == "openrouter":
+            model = AGENT_MODELS_OPENROUTER.get(agent_name, AGENT_MODELS_OPENROUTER["default"])
+        else:
+            model = AGENT_MODELS_OLLAMA.get(agent_name, AGENT_MODELS_OLLAMA.get("default", LLM_MODEL))
 
-    return ChatOllama(
-        model=model or LLM_MODEL,
-        temperature=temperature if temperature is not None else LLM_TEMPERATURE,
-        base_url=LLM_BASE_URL,
-        streaming=streaming,
-    )
+    _model = model
+    _temp = temperature if temperature is not None else LLM_TEMPERATURE
+
+    if provider == "ollama":
+        from langchain_ollama import ChatOllama
+        return ChatOllama(
+            model=_model,
+            temperature=_temp,
+            base_url=LLM_BASE_URL,
+            streaming=streaming,
+        )
+
+    elif provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+        if not ANTHROPIC_API_KEY:
+            raise ValueError("Set ANTHROPIC_API_KEY in .env to use Anthropic.")
+        return ChatAnthropic(
+            model=_model,
+            temperature=_temp,
+            api_key=ANTHROPIC_API_KEY,
+            streaming=streaming,
+        )
+
+    elif provider == "openai":
+        from langchain_openai import ChatOpenAI
+        if not OPENAI_API_KEY:
+            raise ValueError("Set OPENAI_API_KEY in .env to use OpenAI.")
+        return ChatOpenAI(
+            model=_model,
+            temperature=_temp,
+            api_key=OPENAI_API_KEY,
+            streaming=streaming,
+        )
+
+    elif provider == "openrouter":
+        from langchain_openai import ChatOpenAI
+        
+        if not _openrouter_key_cycle:
+            raise ValueError("Set OPENROUTER_API_KEYS in .env to use OpenRouter.")
+        
+        api_key = next(_openrouter_key_cycle)
+        
+        primary_llm = ChatOpenAI(
+            model=_model,
+            temperature=_temp,
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1",
+            streaming=streaming,
+            max_retries=0
+        )
+
+        # Build fallback chain using a robust sequence of other powerful free models
+        fallback_models = [
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "nousresearch/hermes-3-llama-3.1-405b:free",
+            "nvidia/nemotron-3-super-120b-a12b:free",
+            "qwen/qwen3-coder:free",
+            "google/gemma-4-31b-it:free",
+            "openrouter/free"
+        ]
+        
+        fallback_chain = []
+        for fb_model in fallback_models:
+            if fb_model != _model:
+                fallback_chain.append(
+                    ChatOpenAI(
+                        model=fb_model,
+                        temperature=_temp,
+                        api_key=api_key,
+                        base_url="https://openrouter.ai/api/v1",
+                        streaming=streaming,
+                        max_retries=0
+                    )
+                )
+                
+        return primary_llm.with_fallbacks(fallback_chain)
+
+    elif provider == "google":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        if not GOOGLE_API_KEY:
+            raise ValueError("Set GOOGLE_API_KEY in .env to use Google.")
+        return ChatGoogleGenerativeAI(
+            model=_model,
+            temperature=_temp,
+            google_api_key=GOOGLE_API_KEY,
+        )
+
+    else:
+        raise ValueError(
+            f"Unknown LLM_PROVIDER='{provider}'. "
+            "Supported: ollama | anthropic | openai | google"
+        )
 
 
 def get_supervisor_llm():
-    """Return the LLM configured for reliable structured output (supervisor routing)."""
+    """Return the LLM for the supervisor node (strict deterministic routing)."""
     return get_llm(
-        model=SUPERVISOR_MODEL,
+        agent_name="supervisor",
         temperature=SUPERVISOR_TEMPERATURE,
         streaming=False,
     )
+
+
+# ══════════════════════════════════════════════════════════════
+#  Prompt + Knowledge Template Loaders
+# ══════════════════════════════════════════════════════════════
+
+def load_prompt(name: str) -> str:
+    """Load a prompt template from ai/prompts/<name>.md"""
+    path = _PROMPTS_DIR / f"{name}.md"
+    if not path.exists():
+        raise FileNotFoundError(f"Prompt template not found: {path}")
+    return path.read_text(encoding="utf-8")
+
+
+def load_kt() -> str:
+    """Load the DB schema knowledge-transfer document."""
+    path = _KNOWLEDGE_DIR / "db_schema_kt.md"
+    if not path.exists():
+        return "[DB Schema KT not yet generated. Run: python3 scripts/generate_kt.py]"
+    return path.read_text(encoding="utf-8")

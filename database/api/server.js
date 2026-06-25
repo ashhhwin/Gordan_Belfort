@@ -59,10 +59,10 @@ if (TELEGRAM_TOKEN && TELEGRAM_CHAT_ID) {
         jobsText += `- ${j.job_name}: ${j.status} (${new Date(j.started_at).toLocaleTimeString()})\n`;
       });
 
-      const response = `🟢 <b>Stock Pilot is ONLINE</b>\n\n<b>Last Portfolio Sync</b>: ${lastSynced}\n\n<b>Recent Jobs</b>:\n${jobsText}`;
+      const response = `[SYSTEM] <b>Stock Pilot is ONLINE</b>\n\n<b>Last Portfolio Sync</b>: ${lastSynced}\n\n<b>Recent Jobs</b>:\n${jobsText}`;
       sendTelegramSafe(response).catch(console.error);
     } catch (err) {
-      sendTelegramSafe(`🔴 <b>System Error</b>\n${err.message}`).catch(console.error);
+      sendTelegramSafe(`[SYSTEM ERROR]\n${err.message}`).catch(console.error);
     }
   });
 
@@ -75,7 +75,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_CHAT_ID) {
     bot.sendChatAction(TELEGRAM_CHAT_ID, 'typing');
 
     try {
-      const response = await fetch('http://localhost:8000/chat/sync', {
+      const response = await fetch('http://localhost:8001/chat/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -90,10 +90,10 @@ if (TELEGRAM_TOKEN && TELEGRAM_CHAT_ID) {
       if (data.response) {
         await sendTelegramSafe(data.response);
       } else {
-        await sendTelegramSafe(`⚠️ <b>Error</b>: Invalid response from AI`).catch(console.error);
+        await sendTelegramSafe(`[ERROR] Invalid response from AI`).catch(console.error);
       }
     } catch (err) {
-      sendTelegramSafe(`⚠️ <b>Error hitting AI endpoint</b>\n${err.message}`).catch(console.error);
+      sendTelegramSafe(`[ERROR] Hitting AI endpoint\n${err.message}`).catch(console.error);
     }
   });
 
@@ -132,6 +132,21 @@ const pool = new Pool({
   database: process.env.PGDATABASE || 'stock_pilot',
   password: process.env.PGPASSWORD || '',
   port: process.env.PGPORT || 5432,
+});
+
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
+  sendTelegramAlert(`[DATABASE ERROR] Unexpected error on idle client:\n${err.message}`);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  sendTelegramAlert(`[CRITICAL] Uncaught Exception:\n${err.message}\n\n\`\`\`\n${err.stack}\n\`\`\``);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  sendTelegramAlert(`[CRITICAL] Unhandled Rejection:\n${reason}`);
 });
 
 // Test connection
@@ -181,6 +196,10 @@ app.put('/api/family/:id/config', async (req, res) => {
 });
 
 // ─── Users ───
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 app.get('/api/users', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM users ORDER BY created_at ASC');
@@ -316,8 +335,23 @@ app.get('/api/history', async (req, res) => {
 
 app.get('/api/sync-status', async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT MAX(updated_at) as last_synced FROM holdings');
-    res.json(rows[0]);
+    const globalRes = await pool.query(`
+      SELECT MAX(completed_at) as last_synced 
+      FROM sync_logs 
+      WHERE LOWER(status) IN ('success', 'completed')
+    `);
+    
+    const jobsRes = await pool.query(`
+      SELECT DISTINCT ON (job_name) job_name, status, completed_at, started_at
+      FROM sync_logs
+      WHERE job_name IS NOT NULL
+      ORDER BY job_name, started_at DESC
+    `);
+
+    res.json({
+      last_synced: globalRes.rows[0]?.last_synced || null,
+      jobs: jobsRes.rows
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -364,6 +398,9 @@ const GCS_TIMEZONE = 'UTC';
 const DAILY_BRIEFING_CRON = '0 20 * * *'; // 8:00 PM
 const MARKET_PULSE_CRON = '0 */2 * * *'; // Every 2 hours
 
+const IBKR_SYNC_CRON = '0 17 * * *'; // 5:00 PM
+const IBKR_TIMEZONE = 'America/New_York';
+
 const runningJobs = new Set();
 
 async function runPipeline(command, args = [], jobName = 'Unknown Job', logFile = null) {
@@ -394,6 +431,7 @@ async function runPipeline(command, args = [], jobName = 'Unknown Job', logFile 
   child.on('error', async (err) => {
     console.error(`[PIPELINE] Spawn error: ${err.message}`);
     const message = `Failed to spawn process: ${err.message}`;
+    sendTelegramAlert(`[CRITICAL] Failed to spawn process ${jobName}:\n${err.message}`);
     try {
       await pool.query(
         'UPDATE sync_logs SET completed_at = NOW(), status = $1, message = $2 WHERE id = $3',
@@ -434,9 +472,9 @@ async function runPipeline(command, args = [], jobName = 'Unknown Job', logFile 
     }
 
     if (status === 'FAILED') {
-      sendTelegramAlert(`🚨 *Job Failed*: ${jobName}\n\n\`\`\`\n${message.substring(message.length - 500)}\n\`\`\``);
+      sendTelegramAlert(`[FAILED] Job: ${jobName}\n\n\`\`\`\n${message.substring(message.length - 500)}\n\`\`\``);
     } else {
-      sendTelegramAlert(`✅ *Job Completed*: ${jobName}`);
+      sendTelegramAlert(`[COMPLETED] Job: ${jobName}`);
     }
 
     runningJobs.delete(jobName);
@@ -456,26 +494,30 @@ const nseJob = cron.schedule(NSE_CRON_EXPRESSION, () => {
 }, { scheduled: true, timezone: NSE_CRON_TIMEZONE });
 
 const gcsMarketJob = cron.schedule(GCS_MARKET_CRON, () => {
-  runPipeline('ai/venv/bin/python', ['scripts/gcs_market_feeds/gcs_market_data.py'], 'GCS Market Data', '/tmp/gcs_market.log');
+  runPipeline('ai/venv/bin/python', ['-u', 'scripts/gcs_market_feeds/gcs_market_data.py'], 'GCS Market Data', '/tmp/gcs_market.log');
 }, { scheduled: true, timezone: GCS_TIMEZONE });
 
 const gcsEstimatesJob = cron.schedule(GCS_ESTIMATES_CRON, () => {
-  runPipeline('ai/venv/bin/python', ['scripts/gcs_market_feeds/gcs_analyst_estimates_data.py'], 'GCS Analyst Estimates Data', '/tmp/gcs_estimates.log');
+  runPipeline('ai/venv/bin/python', ['-u', 'scripts/gcs_market_feeds/gcs_analyst_estimates_data.py'], 'GCS Analyst Estimates Data', '/tmp/gcs_estimates.log');
 }, { scheduled: true, timezone: GCS_TIMEZONE });
 
 const gcsEarningsJob = cron.schedule(GCS_EARNINGS_CRON, () => {
-  runPipeline('ai/venv/bin/python', ['scripts/gcs_market_feeds/gcs_earnings_calendar.py'], 'GCS Earnings Calendar', '/tmp/gcs_earnings.log');
+  runPipeline('ai/venv/bin/python', ['-u', 'scripts/gcs_market_feeds/gcs_earnings_calendar.py'], 'GCS Earnings Calendar', '/tmp/gcs_earnings.log');
 }, { scheduled: true, timezone: GCS_TIMEZONE });
+
+const ibkrSyncJob = cron.schedule(IBKR_SYNC_CRON, () => {
+  runPipeline('bash', ['scripts/ingestion/portfolio_pipeline.sh'], 'IBKR Portfolio Sync', '/Users/ashwinram/Personal Coding Projects/stock_pilot/logs/portfolio_ingest.log');
+}, { scheduled: true, timezone: IBKR_TIMEZONE });
 
 // ── Autonomous AI Alerting Crons ──
 cron.schedule(DAILY_BRIEFING_CRON, async () => {
   console.log(`[CRON] Triggering Daily AI Briefing at ${new Date().toISOString()}`);
   try {
-    await fetch('http://localhost:8000/chat/sync', {
+    await fetch('http://localhost:8001/chat/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        message: "Generate a comprehensive End-of-Day briefing for my portfolio and the broader market. Use your tools to check my net worth and today's market performance. Then, use the send_telegram_alert tool to send me this beautifully formatted briefing with emojis and bold text.",
+        message: "Generate a comprehensive End-of-Day briefing for my portfolio and the broader market. Use your tools to check my net worth and today's market performance. Then, use the send_telegram_alert tool to send me this concisely formatted briefing. CRITICAL: Use a highly professional tone. DO NOT use any emojis whatsoever.",
         session_id: 'cron-daily-briefing'
       })
     });
@@ -487,11 +529,11 @@ cron.schedule(DAILY_BRIEFING_CRON, async () => {
 cron.schedule(MARKET_PULSE_CRON, async () => {
   console.log(`[CRON] Triggering Autonomous Market Pulse at ${new Date().toISOString()}`);
   try {
-    await fetch('http://localhost:8000/chat/sync', {
+    await fetch('http://localhost:8001/chat/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        message: "Review the current market conditions and my portfolio holdings. If you detect any sudden crashes, major anomalies, or significant trends that I need to know about right now, use your send_telegram_alert tool to notify me intuitively. If the market is boring and stable, reply with exactly 'NO_ALERT_NEEDED' without using any tools.",
+        message: "Review the current market conditions and my portfolio holdings. If you detect any sudden crashes, major anomalies, or significant trends that I need to know about right now, use your send_telegram_alert tool to notify me with a professional, concise alert. CRITICAL: DO NOT use any emojis whatsoever. If the market is stable, reply with exactly 'NO_ALERT_NEEDED' without using any tools.",
         session_id: 'cron-market-pulse'
       })
     });
@@ -499,6 +541,37 @@ cron.schedule(MARKET_PULSE_CRON, async () => {
     console.error('Market pulse failed:', err);
   }
 }, { scheduled: true, timezone: CRON_TIMEZONE });
+
+  app.post('/api/sync-all', (req, res) => {
+  const jobs = [
+    { cmd: 'bash', args: ['scripts/ingestion/portfolio_pipeline.sh'], name: 'IBKR Portfolio Sync', log: '/Users/ashwinram/Personal Coding Projects/stock_pilot/logs/portfolio_ingest.log' },
+    { cmd: 'bash', args: ['scripts/ingestion/sync_pipeline.sh'], name: 'Portfolio Sync', log: '/tmp/gordan-belfort_sync.log' },
+    { cmd: 'bash', args: ['scripts/ingestion/nse_pipeline.sh'], name: 'NSE Market Data', log: '/tmp/gordan-belfort_nse_sync.log' },
+    { cmd: 'ai/venv/bin/python', args: ['-u', 'scripts/gcs_market_feeds/gcs_market_data.py'], name: 'GCS Market Data', log: '/tmp/gcs_market.log' },
+    { cmd: 'ai/venv/bin/python', args: ['-u', 'scripts/gcs_market_feeds/gcs_analyst_estimates_data.py'], name: 'GCS Analyst Estimates Data', log: '/tmp/gcs_estimates.log' },
+    { cmd: 'ai/venv/bin/python', args: ['-u', 'scripts/gcs_market_feeds/gcs_earnings_calendar.py'], name: 'GCS Earnings Calendar', log: '/tmp/gcs_earnings.log' }
+  ];
+  
+  let startedCount = 0;
+  for (const job of jobs) {
+    if (runPipeline(job.cmd, job.args, job.name, job.log)) {
+      startedCount++;
+    }
+  }
+  
+  // Fire and forget the AI Market Pulse
+  fetch('http://localhost:8001/chat/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: "Review the current market conditions and my portfolio holdings. If you detect any sudden crashes, major anomalies, or significant trends that I need to know about right now, use your send_telegram_alert tool to notify me with a professional, concise alert. CRITICAL: DO NOT use any emojis whatsoever. If the market is stable, reply with exactly 'NO_ALERT_NEEDED' without using any tools.",
+      session_id: 'cron-market-pulse'
+    })
+  }).catch(err => console.error('AI Market Pulse trigger failed:', err));
+  
+  sendTelegramAlert(`[SYSTEM] Global Sync Pipeline Triggered (${startedCount} background jobs + AI Pulse)`);
+  res.json({ message: `Triggered ${startedCount} jobs successfully.`, startedCount });
+});
 
 app.post('/api/sync-run', (req, res) => {
   const started = runPipeline('bash', ['scripts/ingestion/sync_pipeline.sh'], 'Portfolio Sync', '/tmp/gordan-belfort_sync.log');
@@ -513,21 +586,27 @@ app.post('/api/nse-sync-run', (req, res) => {
 });
 
 app.post('/api/gcs-market-run', (req, res) => {
-  const started = runPipeline('ai/venv/bin/python', ['scripts/gcs_market_feeds/gcs_market_data.py'], 'GCS Market Data', '/tmp/gcs_market.log');
+  const started = runPipeline('ai/venv/bin/python', ['-u', 'scripts/gcs_market_feeds/gcs_market_data.py'], 'GCS Market Data', '/tmp/gcs_market.log');
   if (!started) return res.status(409).json({ error: 'Sync is already running' });
   res.json({ message: 'GCS Market Sync started' });
 });
 
 app.post('/api/gcs-estimates-run', (req, res) => {
-  const started = runPipeline('ai/venv/bin/python', ['scripts/gcs_market_feeds/gcs_analyst_estimates_data.py'], 'GCS Analyst Estimates Data', '/tmp/gcs_estimates.log');
+  const started = runPipeline('ai/venv/bin/python', ['-u', 'scripts/gcs_market_feeds/gcs_analyst_estimates_data.py'], 'GCS Analyst Estimates Data', '/tmp/gcs_estimates.log');
   if (!started) return res.status(409).json({ error: 'Sync is already running' });
   res.json({ message: 'GCS Estimates Sync started' });
 });
 
 app.post('/api/gcs-earnings-run', (req, res) => {
-  const started = runPipeline('ai/venv/bin/python', ['scripts/gcs_market_feeds/gcs_earnings_calendar.py'], 'GCS Earnings Calendar', '/tmp/gcs_earnings.log');
+  const started = runPipeline('ai/venv/bin/python', ['-u', 'scripts/gcs_market_feeds/gcs_earnings_calendar.py'], 'GCS Earnings Calendar', '/tmp/gcs_earnings.log');
   if (!started) return res.status(409).json({ error: 'Sync is already running' });
   res.json({ message: 'GCS Earnings Sync started' });
+});
+
+app.post('/api/ibkr-sync-run', (req, res) => {
+  const started = runPipeline('bash', ['scripts/ingestion/portfolio_pipeline.sh'], 'IBKR Portfolio Sync', '/Users/ashwinram/Personal Coding Projects/stock_pilot/logs/portfolio_ingest.log');
+  if (!started) return res.status(409).json({ error: 'Sync is already running' });
+  res.json({ message: 'IBKR Sync started' });
 });
 
 app.post('/api/alert', (req, res) => {
@@ -548,7 +627,7 @@ app.post('/api/login-alert', async (req, res) => {
     const location = geo.status === 'success' ? `${geo.city}, ${geo.regionName}, ${geo.country}` : 'Unknown Location';
     const ip = geo.query || 'Unknown IP';
     
-    const message = `🔒 *Security Alert: Login Detected*\n\n*User*: ${user}\n*Method*: ${method || 'Unknown'}\n*Location*: ${location}\n*IP Address*: ${ip}\n*Time*: ${new Date().toLocaleString()}`;
+    const message = `[SECURITY] *Login Detected*\n\n*User*: ${user}\n*Method*: ${method || 'Unknown'}\n*Location*: ${location}\n*IP Address*: ${ip}\n*Time*: ${new Date().toLocaleString()}`;
     sendTelegramAlert(message);
     res.json({ success: true });
   } catch (err) {
@@ -622,6 +701,66 @@ app.get('/api/market/overview', async (req, res) => {
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/market/signals', async (req, res) => {
+  try {
+    const query = `
+      SELECT 'SMART_MONEY' as type, date, symbol, deal_type as detail
+      FROM mv_alpha_smart_money
+      UNION ALL
+      SELECT 'VOL_BREAKOUT' as type, date, symbol, (ROUND(volume_surge_pct, 1) || '% Surge') as detail
+      FROM mv_alpha_volume_breakouts
+      ORDER BY date DESC
+      LIMIT 8
+    `;
+    const { rows } = await pool.query(query);
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching alpha signals:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/market/indices', async (req, res) => {
+  try {
+    const niftyQuery = `
+      SELECT date, close_val 
+      FROM nse_indices_daily 
+      WHERE index_name = 'NIFTY 50' 
+      ORDER BY date ASC
+    `;
+    const { rows: niftyRows } = await pool.query(niftyQuery);
+
+    const spyQuery = `
+      SELECT trade_date as date, p_close as close_val 
+      FROM market.market_data 
+      WHERE symbol = 'SPY' 
+      ORDER BY trade_date ASC
+    `;
+    const { rows: spyRows } = await pool.query(spyQuery);
+
+    // Merge into a single array aligned by date
+    const merged = {};
+    
+    niftyRows.forEach(r => {
+      const d = r.date.toISOString().split('T')[0];
+      if (!merged[d]) merged[d] = { date: d };
+      merged[d].nifty = parseFloat(r.close_val);
+    });
+
+    spyRows.forEach(r => {
+      const d = r.date.toISOString().split('T')[0];
+      if (!merged[d]) merged[d] = { date: d };
+      merged[d].spy = parseFloat(r.close_val);
+    });
+
+    const result = Object.values(merged).sort((a, b) => new Date(a.date) - new Date(b.date));
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching market indices:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -761,7 +900,8 @@ app.get('/api/cron-status', async (req, res) => {
     const nseInterval = parser.parse(NSE_CRON_EXPRESSION, { tz: NSE_CRON_TIMEZONE });
     const gcsMarketInterval = parser.parse(GCS_MARKET_CRON, { tz: GCS_TIMEZONE });
     const gcsEstimatesInterval = parser.parse(GCS_ESTIMATES_CRON, { tz: GCS_TIMEZONE });
-    const gcsEarningsInterval = parser.parse(GCS_EARNINGS_CRON, { tz: GCS_TIMEZONE });
+      const gcsEarningsInterval = parser.parse(GCS_EARNINGS_CRON, { tz: GCS_TIMEZONE });
+    const ibkrInterval = parser.parse(IBKR_SYNC_CRON, { tz: IBKR_TIMEZONE });
     
     res.json([
       { 
@@ -781,6 +921,7 @@ app.get('/api/cron-status', async (req, res) => {
       { job: 'GCS Market Data', configured: true, nextRun: gcsMarketInterval.next().toDate().toISOString(), cronExpression: GCS_MARKET_CRON, tz: GCS_TIMEZONE },
       { job: 'GCS Analyst Estimates Data', configured: true, nextRun: gcsEstimatesInterval.next().toDate().toISOString(), cronExpression: GCS_ESTIMATES_CRON, tz: GCS_TIMEZONE },
       { job: 'GCS Earnings Calendar', configured: true, nextRun: gcsEarningsInterval.next().toDate().toISOString(), cronExpression: GCS_EARNINGS_CRON, tz: GCS_TIMEZONE },
+      { job: 'IBKR Portfolio Sync', configured: true, nextRun: ibkrInterval.next().toDate().toISOString(), cronExpression: IBKR_SYNC_CRON, tz: IBKR_TIMEZONE },
       { job: 'AI Daily Briefing', configured: true, nextRun: parser.parse(DAILY_BRIEFING_CRON, { tz: CRON_TIMEZONE }).next().toDate().toISOString(), cronExpression: DAILY_BRIEFING_CRON, tz: CRON_TIMEZONE },
       { job: 'AI Market Pulse', configured: true, nextRun: parser.parse(MARKET_PULSE_CRON, { tz: CRON_TIMEZONE }).next().toDate().toISOString(), cronExpression: MARKET_PULSE_CRON, tz: CRON_TIMEZONE }
     ]);

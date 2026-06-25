@@ -83,7 +83,7 @@ body {
 }
 
 #root {
-  width: 100vw;
+  width: 100%;
   height: 100vh;
   display: flex;
 }
@@ -459,11 +459,12 @@ h4 {
 }
 
 .forex-rate {
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 600;
   font-family: var(--font-mono);
-  color: var(--text-muted);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  color: var(--accent-blue);
+  background: rgba(56, 189, 248, 0.1);
+  border: none;
   padding: 4px 10px;
   border-radius: var(--radius-sm);
 }
@@ -476,6 +477,8 @@ h4 {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .page-content {
@@ -485,6 +488,8 @@ h4 {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* ─────────────────────────────────────────────
@@ -494,6 +499,8 @@ h4 {
   background: var(--surface);
   border-radius: var(--radius-lg);
   padding: 24px;
+  min-width: 0;
+  max-width: 100%;
   /* Borders and glass removed */
 }
 
@@ -2672,4 +2679,126 @@ tbody td {
   background: var(--surface-3);
   border-color: var(--accent-blue);
   color: var(--text-primary);
+}
+
+.sync-dropdown-container:hover .sync-dropdown {
+  display: block;
+}
+
+.sync-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: rgba(20, 20, 25, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 12px;
+  min-width: 250px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+}
+
+.sync-dropdown h4 {
+  margin: 0 0 10px 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  padding-bottom: 6px;
+}
+
+.sync-job-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 0.85rem;
+}
+
+.job-name {
+  color: var(--text-primary);
+}
+
+.job-status {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.job-status.success, .job-status.completed {
+  color: var(--accent-green);
+  background: var(--accent-green-dim);
+}
+
+.job-status.failed {
+  color: var(--accent-red);
+  background: var(--accent-red-dim);
+}
+
+.job-status.running, .job-status.started {
+  color: var(--accent-amber);
+  background: var(--accent-amber-dim);
+}
+
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+/* ─────────────────────────────────────────────
+   FLIP KPI CARDS
+   ───────────────────────────────────────────── */
+.kpi-card-container {
+  perspective: 1000px;
+  width: 100%;
+  height: 180px;
+}
+
+.kpi-card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.4s ease-in-out;
+  transform-style: preserve-3d;
+}
+
+.kpi-card-container:hover .kpi-card-inner {
+  transform: rotateY(180deg);
+}
+
+.kpi-card-front, .kpi-card-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 16px;
+  overflow: hidden;
+}
+
+.kpi-card-back {
+  transform: rotateY(180deg);
+  display: flex;
+  flex-direction: column;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+.holdings-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }

@@ -86,7 +86,8 @@ def clean_indmoney_report(input_path=None, output_path=None):
             df = df.drop(columns=[c for c in columns_to_drop if c in df.columns])
 
             if "Asset Type" in df.columns:
-                df = df[df["Asset Type"].str.lower() != "stock"]
+                # Do not drop stocks anymore, map them to US Stock or IND Equity based on category if needed later
+                pass
 
             new_sheet_name = sheet_name_mapping[sheet_name]
 

@@ -1,8 +1,3 @@
-"""
-Rich typed state for the Gordan Belfort LangGraph agent.
-Uses Pydantic-compatible TypedDict with proper reducers.
-"""
-
 import operator
 from typing import Annotated, Any, Sequence, TypedDict, Optional
 from langchain_core.messages import BaseMessage
@@ -38,14 +33,18 @@ class AgentState(TypedDict):
 
     messages:        Conversational history and tool responses (append-only).
     next_agent:      The name of the agent to route to next (determined by supervisor).
+    sender:          The name of the agent that last updated the state.
     thinking_steps:  Chain-of-thought reasoning log (append-only).
     tool_traces:     Tool execution trace for UI display (append-only).
     memory_context:  Retrieved long-term memories injected into agent context.
     persona:         Active persona key (e.g., "gordan_belfort").
+    model:           Optional[str]
+    temperature:     Optional[float]
     metadata:        Arbitrary metadata (model used, token counts, etc.).
     """
     messages: Annotated[Sequence[BaseMessage], operator.add]
     next_agent: str
+    sender: str
     thinking_steps: Annotated[list[ThinkingStep], operator.add]
     tool_traces: Annotated[list[ToolTrace], operator.add]
     memory_context: list[MemoryItem]

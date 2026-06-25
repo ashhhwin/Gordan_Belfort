@@ -1,22 +1,23 @@
 """
-Main LangGraph definition with SQLite checkpointing, thinking → routing → agent → memory pipeline.
+Main LangGraph definition with SQLite checkpointing.
+Implements the Multi-Agent Cyclic Supervisor Pattern.
 """
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, START, END
 
 from api.graph.state import AgentState
-from api.graph.nodes.thinking import thinking_node
-from api.graph.nodes.simulation import simulation_node
-from api.graph.nodes.conversation import conversation_node
-from api.graph.nodes.database_agent import database_node
-from api.graph.nodes.memory import memory_retrieve_node, memory_write_node
+from api.graph.nodes.supervisor import supervisor_node
+from api.graph.nodes.data_agent import data_agent_node
+from api.graph.nodes.quant_agent import quant_agent_node
+from api.graph.nodes.judge_agent import judge_agent_node
+from api.graph.nodes.presenter_agent import presenter_agent_node
 
 
-def route_next(state: AgentState):
-    """Route based on the supervisor/thinking node's decision."""
+def route_supervisor(state: AgentState):
+    """Route based on the supervisor's decision."""
     next_node = state.get("next_agent", "FINISH")
     if next_node == "FINISH":
-        return END
+        return "presenter_agent"
     return next_node
 
 
@@ -24,35 +25,34 @@ def build_app_graph(checkpointer=None):
     builder = StateGraph(AgentState)
 
     # ── Add all nodes ──
-    builder.add_node("memory_retrieve", memory_retrieve_node)
-    builder.add_node("thinking", thinking_node)
-    builder.add_node("simulation", simulation_node)
-    builder.add_node("conversation", conversation_node)
-    builder.add_node("database", database_node)
-    builder.add_node("memory_write", memory_write_node)
+    builder.add_node("supervisor", supervisor_node)
+    builder.add_node("data_agent", data_agent_node)
+    builder.add_node("quant_agent", quant_agent_node)
+    builder.add_node("judge_agent", judge_agent_node)
+    builder.add_node("presenter_agent", presenter_agent_node)
 
-    # ── Entry point: retrieve memories first ──
-    builder.set_entry_point("memory_retrieve")
+    # ── Entry point ──
+    builder.add_edge(START, "supervisor")
 
-    # ── Memory → Thinking (chain-of-thought reasoning + routing) ──
-    builder.add_edge("memory_retrieve", "thinking")
-
-    # ── Thinking node decides which agent to route to ──
+    # ── Supervisor routes to workers ──
     builder.add_conditional_edges(
-        "thinking",
-        route_next,
+        "supervisor",
+        route_supervisor,
         {
-            "simulation": "simulation",
-            "conversation": "conversation",
-            "database": "database",
+            "data_agent": "data_agent",
+            "quant_agent": "quant_agent",
+            "judge_agent": "judge_agent",
+            "presenter_agent": "presenter_agent",
             END: END
         }
     )
 
-    # ── All agents → Memory Write → END ──
-    builder.add_edge("simulation", "memory_write")
-    builder.add_edge("conversation", "memory_write")
-    builder.add_edge("database", "memory_write")
-    builder.add_edge("memory_write", END)
+    # ── Workers always return to the Supervisor for the next step ──
+    builder.add_edge("data_agent", "supervisor")
+    builder.add_edge("quant_agent", "supervisor")
+    builder.add_edge("judge_agent", "supervisor")
+
+    # ── Presenter Agent is the final step ──
+    builder.add_edge("presenter_agent", END)
 
     return builder.compile(checkpointer=checkpointer)

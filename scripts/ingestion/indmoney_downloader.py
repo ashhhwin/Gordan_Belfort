@@ -42,7 +42,7 @@ def get_otp(timeout=120):
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def download_indmoney_report():
-    project_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    project_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
     save_dir     = os.path.join(project_root, "database", "data", "raw", "indmoney")
     os.makedirs(save_dir, exist_ok=True)
     save_path    = os.path.join(save_dir, "latest.xlsx")

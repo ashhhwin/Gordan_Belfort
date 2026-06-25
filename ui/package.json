@@ -5,11 +5,11 @@
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"node ../database/api/server.js\" \"cd ../ai && .venv/bin/uvicorn api.main:app --port 8000 --reload\"",
+    "dev": "concurrently -k \"vite\" \"node ../database/api/server.js\" \"cd ../ai && .venv/bin/uvicorn api.main:app --port 8001 --reload\"",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "dev:app": "concurrently -k \"vite --port 5173\" \"wait-on tcp:5173 && electron . --js-flags=--max-old-space-size=256\" \"cd ../ai && .venv/bin/uvicorn api.main:app --port 8000\"",
+    "dev:app": "concurrently -k \"vite --port 5173\" \"wait-on tcp:5173 && electron . --js-flags=--max-old-space-size=256\" \"cd ../ai && .venv/bin/uvicorn api.main:app --port 8001\"",
     "build:app": "vite build && electron-builder"
   },
   "dependencies": {
@@ -21,12 +21,14 @@
     "elkjs": "^0.11.1",
     "lightweight-charts": "^5.2.0",
     "lucide-react": "^1.18.0",
+    "mermaid": "^11.15.0",
     "react": "^19.2.6",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.2.6",
     "react-hot-toast": "^2.6.0",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.17.0",
+    "react-syntax-highlighter": "^16.1.1",
     "recharts": "^3.8.1",
     "remark-gfm": "^4.0.1",
     "zustand": "^5.0.14"

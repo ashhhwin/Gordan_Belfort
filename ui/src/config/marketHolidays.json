@@ -1,0 +1,33 @@
+{
+  "_llm_instructions": "This file contains the hardcoded market holidays for the US (NYSE) and Indian (NSE) stock markets. If the year has changed, use your search tools to find the EXACT list of full-day market closure dates for the new year and completely rewrite this file with the new 'YYYY-MM-DD' dates. Do not include weekends or half-days. Keep the keys 'NYSE' and 'NSE'.",
+  "NYSE": [
+    "2026-01-01",
+    "2026-01-19",
+    "2026-02-16",
+    "2026-04-03",
+    "2026-05-25",
+    "2026-06-19",
+    "2026-07-03",
+    "2026-09-07",
+    "2026-11-26",
+    "2026-12-25"
+  ],
+  "NSE": [
+    "2026-01-15",
+    "2026-01-26",
+    "2026-03-03",
+    "2026-03-26",
+    "2026-03-31",
+    "2026-04-03",
+    "2026-04-14",
+    "2026-05-01",
+    "2026-05-28",
+    "2026-06-26",
+    "2026-09-14",
+    "2026-10-02",
+    "2026-10-20",
+    "2026-11-10",
+    "2026-11-24",
+    "2026-12-25"
+  ]
+}

@@ -114,3 +114,5 @@ def run():
 
 if __name__ == "__main__":
     run()
+
+import sys; sys.exit(0)

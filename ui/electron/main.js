@@ -1,10 +1,13 @@
-import { app, BrowserWindow, ipcMain, systemPreferences } from 'electron';
+import { app, BrowserWindow, ipcMain, systemPreferences, nativeTheme } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Force all webContents (including the LangSmith webview) to use Dark Mode
+nativeTheme.themeSource = 'dark';
 
 let mainWindow;
 let apiProcess;
@@ -50,6 +53,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
+      webviewTag: true,
     },
     backgroundColor: '#080E1E', // Match --bg-main
     show: false, // show gracefully when ready

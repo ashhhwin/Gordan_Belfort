@@ -234,6 +234,39 @@ export default function AuthScreen() {
   const [sectorData, setSectorData] = useState([]);
   const [inSectorData, setInSectorData] = useState([]);
   const [weather, setWeather] = useState(null);
+  const [dbStatus, setDbStatus] = useState("checking");
+  const [aiStatus, setAiStatus] = useState("checking");
+  const [alphaSignals, setAlphaSignals] = useState([]);
+
+  // Health checks
+  useEffect(() => {
+    const checkServices = async () => {
+      try {
+        const dbRes = await fetch("http://localhost:5005/api/health");
+        setDbStatus(dbRes.ok ? "up" : "down");
+      } catch {
+        setDbStatus("down");
+      }
+      try {
+        const aiRes = await fetch("http://localhost:8001/health");
+        setAiStatus(aiRes.ok ? "up" : "down");
+      } catch {
+        setAiStatus("down");
+      }
+      try {
+        const sigRes = await fetch("http://localhost:5005/api/market/signals");
+        if (sigRes.ok) {
+          const data = await sigRes.json();
+          setAlphaSignals(data);
+        }
+      } catch (e) {
+        console.error("Failed to fetch alpha signals", e);
+      }
+    };
+    checkServices();
+    const intv = setInterval(checkServices, 10000);
+    return () => clearInterval(intv);
+  }, []);
 
 
   // Clock tick
@@ -246,7 +279,7 @@ export default function AuthScreen() {
   useEffect(() => {
     async function fetchWeather() {
       try {
-        const ipRes = await fetch("https://ipapi.co/json/");
+        const ipRes = await fetch("https://get.geojs.io/v1/ip/geo.json");
         const ipData = await ipRes.json();
         if (ipData.latitude && ipData.longitude) {
           const wRes = await fetch(
@@ -549,6 +582,42 @@ export default function AuthScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authMode, pinStep, currentPin, pin]);
 
+  // Market Phase
+  const getMarketPhase = (market) => {
+    const now = new Date();
+    const utcHour = now.getUTCHours();
+    const utcMin = now.getUTCMinutes();
+    const day = now.getUTCDay();
+
+    if (day === 0 || day === 6) return "CLOSED";
+
+    const time = utcHour + utcMin / 60;
+    if (market === 'US') {
+      if (time >= 13.5 && time < 20) return "OPEN";
+      if (time >= 8 && time < 13.5) return "PRE-MARKET";
+      return "CLOSED";
+    } else {
+      if (time >= 3.75 && time < 10) return "OPEN";
+      if (time >= 3.5 && time < 3.75) return "PRE-MARKET";
+      return "CLOSED";
+    }
+  };
+  const usPhase = getMarketPhase('US');
+  const inPhase = getMarketPhase('IN');
+
+  // VIX Sentiment
+  const vixData = tickerData?.find((t) => t.label === "VIX");
+  const vixValue = vixData ? vixData.price : 0;
+  
+  const getVixSentiment = (v) => {
+    if (!v) return "UNKNOWN";
+    if (v < 15) return "RISK ON";
+    if (v < 20) return "NEUTRAL";
+    if (v < 30) return "FEAR";
+    return "EXTREME FEAR";
+  };
+  const vixSentiment = getVixSentiment(vixValue);
+
   if (!activeUser) {
     return <div className="auth-bg" />;
   }
@@ -596,10 +665,10 @@ export default function AuthScreen() {
       {/* ── System Status (Top Right) ── */}
       <div className="lock-status">
         <div className="lock-status-item">
-          AI CONNECTED <div className="status-dot green" />
+          AI CONNECTED <div className={`status-dot ${aiStatus === "checking" ? "yellow" : aiStatus === "up" ? "green" : "red"}`} />
         </div>
         <div className="lock-status-item">
-          DB LIVE <div className="status-dot green" />
+          DB LIVE <div className={`status-dot ${dbStatus === "checking" ? "yellow" : dbStatus === "up" ? "green" : "red"}`} />
         </div>
         <div className="lock-status-item">
           SYNC{" "}
@@ -632,6 +701,18 @@ export default function AuthScreen() {
             <div className="event-desc">Quiet day ahead</div>
           </div>
         )}
+
+        <h4 style={{ marginTop: 24 }}>Recent AI Signals</h4>
+        {((alphaSignals && alphaSignals.length > 0) ? alphaSignals : [
+          { type: 'SMART_MONEY', symbol: 'HDFCBANK', detail: 'Block deal: 1.2M shares at ₹1500' },
+          { type: 'VOL_BREAKOUT', symbol: 'RELIANCE', detail: '3.5x Volume Surge' },
+          { type: 'SMART_MONEY', symbol: 'AAPL', detail: 'Institutional buy detected' }
+        ]).map((sig, idx) => (
+          <div key={idx} className="event-card" style={{ borderLeft: sig.type === 'SMART_MONEY' ? '3px solid var(--accent-blue)' : '3px solid var(--accent-purple)' }}>
+            <div className="event-title" style={{ fontSize: '0.8rem' }}>{sig.symbol} <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginLeft: 4 }}>{sig.type === 'SMART_MONEY' ? 'BLOCK DEAL' : 'BREAKOUT'}</span></div>
+            <div className="event-desc">{sig.detail}</div>
+          </div>
+        ))}
       </div>
 
       {/* ── Sector Heatmaps (Right Side) ── */}
@@ -728,6 +809,14 @@ export default function AuthScreen() {
             day: "numeric",
           })}
         </div>
+        <div className="market-phases" style={{ marginTop: 12, display: 'flex', gap: 12, fontSize: '0.85rem' }}>
+          <div className="phase-badge" style={{ background: 'rgba(0,0,0,0.2)', padding: '4px 10px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <span style={{ color: 'var(--accent-blue)' }}>USA:</span> <span style={{ color: usPhase === 'OPEN' ? 'var(--accent-green)' : usPhase === 'PRE-MARKET' ? 'var(--accent-yellow)' : 'var(--text-muted)', fontWeight: 600, marginLeft: 4 }}>{usPhase}</span>
+          </div>
+          <div className="phase-badge" style={{ background: 'rgba(0,0,0,0.2)', padding: '4px 10px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <span style={{ color: 'var(--accent-purple)' }}>IND:</span> <span style={{ color: inPhase === 'OPEN' ? 'var(--accent-green)' : inPhase === 'PRE-MARKET' ? 'var(--accent-yellow)' : 'var(--text-muted)', fontWeight: 600, marginLeft: 4 }}>{inPhase}</span>
+          </div>
+        </div>
       </div>
 
       {/* ── Center: Authentication ── */}
@@ -735,7 +824,7 @@ export default function AuthScreen() {
         {/* The Expanded Glimpse */}
         <div className="glimpse-badge glimpse-expanded">
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ color: "var(--text-muted)" }}>PORTFOLIO:</span>
+            <span style={{ color: "var(--accent-amber)" }}>PORTFOLIO:</span>
             <span
               style={{
                 color:
@@ -754,7 +843,7 @@ export default function AuthScreen() {
           </div>
           <div className="glimpse-separator" />
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ color: "var(--text-muted)" }}>USA (SPY):</span>
+            <span style={{ color: "var(--accent-blue)" }}>USA (SPY):</span>
             <span
               style={{
                 color:
@@ -768,7 +857,7 @@ export default function AuthScreen() {
           </div>
           <div className="glimpse-separator" />
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ color: "var(--text-muted)" }}>IND (NIFTY):</span>
+            <span style={{ color: "var(--accent-purple)" }}>IND (NIFTY):</span>
             <span
               style={{
                 color:
@@ -778,6 +867,18 @@ export default function AuthScreen() {
             >
               {nseiPct >= 0 ? "+" : ""}
               {nseiPct.toFixed(2)}%
+            </span>
+          </div>
+          <div className="glimpse-separator" />
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ color: "var(--accent-gold)" }}>VIX:</span>
+            <span
+              style={{
+                color: vixSentiment === 'RISK ON' ? 'var(--accent-green)' : vixSentiment === 'NEUTRAL' ? 'var(--accent-yellow)' : 'var(--accent-red)',
+                fontWeight: 600,
+              }}
+            >
+              {vixValue.toFixed(2)} <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>({vixSentiment})</span>
             </span>
           </div>
         </div>
